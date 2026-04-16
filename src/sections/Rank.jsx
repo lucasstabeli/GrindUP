@@ -213,17 +213,18 @@ export default function Rank() {
   async function loadFriends() {
     if (!profile?.id) return
     setLoading(true)
+
+    // Safety timeout — never hang forever
+    const timer = setTimeout(() => setLoading(false), 8000)
+
     try {
-      const [{ data: acceptedRows, error: e1 }, { data: pendingRows, error: e2 }] = await Promise.all([
+      const [res1, res2] = await Promise.all([
         supabase.from('friendships').select('friend_id').eq('user_id', profile.id).eq('status', 'accepted'),
         supabase.from('friendships').select('user_id').eq('friend_id', profile.id).eq('status', 'pending'),
       ])
 
-      if (e1) console.warn('friendships accepted error:', e1)
-      if (e2) console.warn('friendships pending error:', e2)
-
-      const friendIds = (acceptedRows || []).map(f => f.friend_id)
-      const pendingIds = (pendingRows || []).map(f => f.user_id)
+      const friendIds = (res1.data || []).map(f => f.friend_id)
+      const pendingIds = (res2.data || []).map(f => f.user_id)
       const allIds = [...new Set([...friendIds, ...pendingIds])]
 
       if (!allIds.length) {
@@ -232,24 +233,25 @@ export default function Rank() {
         return
       }
 
-      const [{ data: profilesData }, { data: gameData }] = await Promise.all([
+      const [res3, res4] = await Promise.all([
         supabase.from('profiles').select('id, name, avatar_url').in('id', allIds),
         supabase.from('user_game_data').select('user_id, data').in('user_id', allIds),
       ])
 
       function enrich(id) {
-        const p = (profilesData || []).find(x => x.id === id) || {}
-        const gd = (gameData || []).find(g => g.user_id === id)?.data || {}
+        const p = (res3.data || []).find(x => x.id === id) || {}
+        const gd = (res4.data || []).find(g => g.user_id === id)?.data || {}
         return { id, name: p.name || 'Anônimo', avatar_url: p.avatar_url || null, coins: gd.coins || 0, streak: gd.streak || 0 }
       }
 
       setFriends(friendIds.map(enrich))
       setPending(pendingIds.map(enrich))
     } catch (err) {
-      console.error('loadFriends error:', err)
+      console.error('loadFriends:', err)
       setFriends([])
       setPending([])
     } finally {
+      clearTimeout(timer)
       setLoading(false)
     }
   }

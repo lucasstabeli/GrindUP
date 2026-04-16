@@ -1,8 +1,17 @@
 const APP_NAME = 'GrindUP'
-const CACHE_NAME = 'grindupv2'
+const CACHE_NAME = 'grindupv3'
 
 self.addEventListener('install', () => self.skipWaiting())
-self.addEventListener('activate', e => e.waitUntil(clients.claim()))
+
+self.addEventListener('activate', e => e.waitUntil(
+  Promise.all([
+    clients.claim(),
+    // Delete all old caches so stale JS is never served
+    caches.keys().then(keys =>
+      Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k)))
+    )
+  ])
+))
 
 // ── PUSH NOTIFICATIONS ──
 self.addEventListener('push', event => {
@@ -35,11 +44,38 @@ self.addEventListener('notificationclick', event => {
   )
 })
 
-// ── OFFLINE CACHE (basic shell) ──
+// ── FETCH STRATEGY ──
+// Network-first for HTML (always get fresh index.html with new script hashes)
+// Cache-first for hashed assets (JS/CSS - immutable filenames)
 self.addEventListener('fetch', event => {
   if (event.request.method !== 'GET') return
   if (!event.request.url.startsWith(self.location.origin)) return
-  event.respondWith(
-    caches.match(event.request).then(cached => cached || fetch(event.request))
-  )
+
+  const url = new URL(event.request.url)
+  const isHTML = url.pathname === '/' || url.pathname.endsWith('.html')
+  const isHashedAsset = /\/assets\/[^/]+\.[a-f0-9]{8,}\.(js|css)$/.test(url.pathname)
+
+  if (isHTML) {
+    // Network-first: always try to get fresh HTML
+    event.respondWith(
+      fetch(event.request).catch(() => caches.match(event.request))
+    )
+  } else if (isHashedAsset) {
+    // Cache-first: hashed assets are immutable
+    event.respondWith(
+      caches.match(event.request).then(cached => {
+        if (cached) return cached
+        return fetch(event.request).then(res => {
+          const clone = res.clone()
+          caches.open(CACHE_NAME).then(c => c.put(event.request, clone))
+          return res
+        })
+      })
+    )
+  } else {
+    // Network-first for everything else (icons, manifest, sw.js)
+    event.respondWith(
+      fetch(event.request).catch(() => caches.match(event.request))
+    )
+  }
 })
