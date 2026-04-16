@@ -70,6 +70,29 @@ export default function TopBar({ title, onAdmin, isAdmin }) {
     await supabase.auth.signOut()
   }
 
+  async function forceReset() {
+    if (!confirm('Isso vai limpar o cache e reinstalar o app. Continuar?')) return
+    try {
+      if ('serviceWorker' in navigator) {
+        const regs = await navigator.serviceWorker.getRegistrations()
+        for (const r of regs) await r.unregister()
+      }
+      if ('caches' in window) {
+        const keys = await caches.keys()
+        await Promise.all(keys.map(k => caches.delete(k)))
+      }
+      // Preserve auth but drop everything else
+      const authKeys = Object.keys(localStorage).filter(k => k.startsWith('sb-'))
+      const preserved = {}
+      for (const k of authKeys) preserved[k] = localStorage.getItem(k)
+      localStorage.clear()
+      for (const k in preserved) localStorage.setItem(k, preserved[k])
+    } catch (e) {
+      console.error('reset error', e)
+    }
+    window.location.href = '/?_r=' + Date.now()
+  }
+
   async function saveName() {
     const trimmed = nameValue.trim()
     if (!trimmed || !profile?.id) return
@@ -276,8 +299,16 @@ export default function TopBar({ title, onAdmin, isAdmin }) {
 
               <button
                 className="btn"
+                onClick={forceReset}
+                style={{ background: 'var(--surface-2)', border: '1px solid var(--accent)', color: 'var(--accent)', marginTop: 8, textTransform: 'none', letterSpacing: 0, fontWeight: 800 }}
+              >
+                🔄 Forçar atualização do app
+              </button>
+
+              <button
+                className="btn"
                 onClick={handleLogout}
-                style={{ background: 'transparent', border: '1px solid var(--line)', color: 'var(--danger)', marginTop: 8, textTransform: 'none', letterSpacing: 0 }}
+                style={{ background: 'transparent', border: '1px solid var(--line)', color: 'var(--danger)', textTransform: 'none', letterSpacing: 0 }}
               >
                 Sair da conta
               </button>

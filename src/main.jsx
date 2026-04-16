@@ -8,6 +8,39 @@ import { supabase } from './lib/supabase'
 import { useUserStore } from './stores/useUserStore'
 import './index.css'
 
+// ── AUTO CACHE-BUST ──
+// Bump this whenever we deploy a breaking change. If the installed PWA
+// is running an older BUILD_ID, we nuke the SW + caches and reload once.
+const BUILD_ID = 'grindup-v4-2026-04-16'
+;(async function checkBuildVersion() {
+  try {
+    const stored = localStorage.getItem('grindup_build_id')
+    if (stored !== BUILD_ID) {
+      localStorage.setItem('grindup_build_id', BUILD_ID)
+      if (stored) {
+        // Was a prior version — force refresh everything
+        if ('serviceWorker' in navigator) {
+          const regs = await navigator.serviceWorker.getRegistrations()
+          for (const r of regs) await r.unregister()
+        }
+        if ('caches' in window) {
+          const keys = await caches.keys()
+          await Promise.all(keys.map(k => caches.delete(k)))
+        }
+        window.location.reload()
+        return
+      }
+    }
+  } catch {}
+})()
+
+// Register SW fresh (after any reset above)
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => {})
+  })
+}
+
 supabase.auth.onAuthStateChange(async (event, session) => {
   const { setUser, setProfile, clearUser } = useUserStore.getState()
 
