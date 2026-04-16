@@ -189,14 +189,15 @@ function QRModal({ code, onClose }) {
 
 // ── MAIN COMPONENT ──
 export default function Rank() {
-  const { profile } = useUserStore()
+  const { profile, user } = useUserStore()
   const { D } = useGameData()
   const [friends, setFriends] = useState([])
-  const [pending, setPending] = useState([])   // incoming requests
+  const [pending, setPending] = useState([])
   const [loading, setLoading] = useState(false)
   const [showAdd, setShowAdd] = useState(false)
   const [showQR, setShowQR] = useState(false)
   const [showScanner, setShowScanner] = useState(false)
+  const [showPending, setShowPending] = useState(false)
   const [addCode, setAddCode] = useState('')
   const [addError, setAddError] = useState('')
   const [addLoading, setAddLoading] = useState(false)
@@ -204,27 +205,44 @@ export default function Rank() {
 
   const myCode = profile?.invite_code || (profile?.id ? profile.id.replace(/-/g, '').slice(0, 8).toUpperCase() : '—')
 
+  // Wait for BOTH profile AND active session (user) before loading
+  // This prevents the race condition where profile comes from localStorage
+  // but Supabase session isn't ready yet
   useEffect(() => {
-    if (!profile?.id) return
+    if (!profile?.id || !user) return
     loadFriends()
 
-    // Reload when user comes back to the tab / app
-    const onVisible = () => { if (document.visibilityState === 'visible') loadFriends() }
+    // Reload silently when user comes back to this tab
+    const onVisible = () => { if (document.visibilityState === 'visible') loadFriendsSilent() }
     document.addEventListener('visibilitychange', onVisible)
 
-    // Also poll every 15s so pending requests appear without manual refresh
-    const interval = setInterval(loadFriends, 15000)
+    // Realtime: listen for new friendship requests
+    const channel = supabase
+      .channel('friendships-realtime')
+      .on('postgres_changes', {
+        event: '*', schema: 'public', table: 'friendships',
+        filter: `friend_id=eq.${profile.id}`,
+      }, () => loadFriendsSilent())
+      .subscribe()
 
     return () => {
       document.removeEventListener('visibilitychange', onVisible)
-      clearInterval(interval)
+      supabase.removeChannel(channel)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [profile?.id])
+  }, [profile?.id, user?.id])
+
+  async function loadFriendsSilent() {
+    await loadFriendsCore(false)
+  }
 
   async function loadFriends() {
+    await loadFriendsCore(true)
+  }
+
+  async function loadFriendsCore(showSpinner) {
     if (!profile?.id) return
-    setLoading(true)
+    if (showSpinner) setLoading(true)
 
     // Safety timeout — never hang forever
     const timer = setTimeout(() => setLoading(false), 8000)
@@ -264,7 +282,7 @@ export default function Rank() {
       setPending([])
     } finally {
       clearTimeout(timer)
-      setLoading(false)
+      if (showSpinner) setLoading(false)
     }
   }
 
@@ -380,12 +398,12 @@ export default function Rank() {
   return (
     <div className="app-section">
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
         <div>
           <h2 style={{ fontSize: '1.4rem', fontWeight: 900, letterSpacing: '-0.5px' }}>Ranking</h2>
           <p style={{ fontSize: '0.8rem', color: 'var(--muted)', marginTop: 2 }}>Compete com seus amigos</p>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <button
             onClick={loadFriends}
             style={{
@@ -406,6 +424,33 @@ export default function Rank() {
           >+ Amigo</button>
         </div>
       </div>
+
+      {/* Pending badge button */}
+      {pending.length > 0 && (
+        <button
+          onClick={() => setShowPending(true)}
+          style={{
+            width: '100%', marginBottom: 16,
+            background: 'var(--accent-soft)', border: '2px solid var(--accent)',
+            borderRadius: 14, padding: '12px 16px',
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            cursor: 'pointer', fontFamily: 'inherit',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span style={{ fontSize: '1.2rem' }}>🔔</span>
+            <span style={{ fontWeight: 800, fontSize: '0.95rem', color: 'var(--text)' }}>
+              Solicitações pendentes
+            </span>
+          </div>
+          <span style={{
+            background: 'var(--accent)', color: '#000',
+            borderRadius: 99, minWidth: 26, height: 26,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: '0.85rem', fontWeight: 900, padding: '0 6px',
+          }}>{pending.length}</span>
+        </button>
+      )}
 
       {/* My code card */}
       <div style={{
@@ -435,48 +480,6 @@ export default function Rank() {
         </button>
       </div>
 
-      {/* Pending requests */}
-      {pending.length > 0 && (
-        <div style={{ marginBottom: 20 }}>
-          <div style={{ fontSize: '0.65rem', fontWeight: 800, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
-            Pedidos pendentes
-            <span style={{ background: 'var(--accent)', color: '#000', borderRadius: 99, width: 18, height: 18, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.65rem', fontWeight: 900 }}>{pending.length}</span>
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {pending.map(p => (
-              <div key={p.id} style={{
-                background: 'var(--accent-soft)', border: '1px solid var(--accent)',
-                borderRadius: 16, padding: '12px 16px',
-                display: 'flex', alignItems: 'center', gap: 12,
-              }}>
-                <Avatar url={p.avatar_url} name={p.name} size={40} />
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontWeight: 700, fontSize: '0.9rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.name}</div>
-                  <div style={{ fontSize: '0.72rem', color: 'var(--muted)', marginTop: 2 }}>quer ser seu amigo</div>
-                </div>
-                <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
-                  <button
-                    onClick={() => acceptRequest(p.id)}
-                    style={{
-                      background: 'var(--accent)', color: '#000',
-                      border: 'none', borderRadius: 10, padding: '7px 14px',
-                      fontSize: '0.8rem', fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit',
-                    }}
-                  >Aceitar</button>
-                  <button
-                    onClick={() => rejectRequest(p.id)}
-                    style={{
-                      background: 'var(--surface-2)', color: 'var(--muted)',
-                      border: '1px solid var(--line)', borderRadius: 10, padding: '7px 12px',
-                      fontSize: '0.8rem', fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
-                    }}
-                  >Recusar</button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
 
       {/* Leaderboard */}
       <div style={{ fontSize: '0.65rem', fontWeight: 800, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: 10 }}>
@@ -641,6 +644,60 @@ export default function Rank() {
 
       {showQR && <QRModal code={myCode} onClose={() => setShowQR(false)} />}
       {showScanner && <QRScanner onDetect={handleQRDetect} onClose={() => setShowScanner(false)} />}
+
+      {/* Pending requests modal */}
+      {showPending && (
+        <div className="booking-overlay" onClick={e => { if (e.target === e.currentTarget) setShowPending(false) }}>
+          <div className="booking-sheet">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <h3 style={{ fontSize: '1.1rem', fontWeight: 800 }}>Solicitações</h3>
+                <span style={{
+                  background: 'var(--accent)', color: '#000',
+                  borderRadius: 99, minWidth: 22, height: 22,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: '0.78rem', fontWeight: 900, padding: '0 5px',
+                }}>{pending.length}</span>
+              </div>
+              <button onClick={() => setShowPending(false)} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: '1.5rem', cursor: 'pointer', lineHeight: 1 }}>×</button>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {pending.map(p => (
+                <div key={p.id} style={{
+                  background: 'var(--surface-2)', border: '1px solid var(--card-border)',
+                  borderRadius: 14, padding: '14px 16px',
+                  display: 'flex', alignItems: 'center', gap: 12,
+                }}>
+                  <Avatar url={p.avatar_url} name={p.name} size={44} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 700, fontSize: '0.95rem' }}>{p.name}</div>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--muted)', marginTop: 2 }}>quer ser seu amigo</div>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flexShrink: 0 }}>
+                    <button
+                      onClick={() => { acceptRequest(p.id); if (pending.length <= 1) setShowPending(false) }}
+                      style={{
+                        background: 'var(--accent)', color: '#000',
+                        border: 'none', borderRadius: 10, padding: '7px 16px',
+                        fontSize: '0.82rem', fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit',
+                      }}
+                    >✓ Aceitar</button>
+                    <button
+                      onClick={() => rejectRequest(p.id)}
+                      style={{
+                        background: 'var(--surface)', color: 'var(--muted)',
+                        border: '1px solid var(--line)', borderRadius: 10, padding: '6px 16px',
+                        fontSize: '0.82rem', fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
+                      }}
+                    >✕ Recusar</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
