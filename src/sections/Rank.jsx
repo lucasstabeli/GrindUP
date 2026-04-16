@@ -193,7 +193,7 @@ export default function Rank() {
   const { D } = useGameData()
   const [friends, setFriends] = useState([])
   const [pending, setPending] = useState([])   // incoming requests
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(false)
   const [showAdd, setShowAdd] = useState(false)
   const [showQR, setShowQR] = useState(false)
   const [showScanner, setShowScanner] = useState(false)
@@ -211,49 +211,42 @@ export default function Rank() {
   }, [profile?.id])
 
   async function loadFriends() {
+    if (!profile?.id) return
     setLoading(true)
     try {
-      // Accepted friends: where I have a row with status=accepted
-      const { data: acceptedRows } = await supabase
-        .from('friendships')
-        .select('friend_id')
-        .eq('user_id', profile.id)
-        .eq('status', 'accepted')
+      const [{ data: acceptedRows, error: e1 }, { data: pendingRows, error: e2 }] = await Promise.all([
+        supabase.from('friendships').select('friend_id').eq('user_id', profile.id).eq('status', 'accepted'),
+        supabase.from('friendships').select('user_id').eq('friend_id', profile.id).eq('status', 'pending'),
+      ])
 
-      // Pending incoming: someone sent me a request (friend_id = me, status=pending)
-      const { data: pendingRows } = await supabase
-        .from('friendships')
-        .select('user_id')
-        .eq('friend_id', profile.id)
-        .eq('status', 'pending')
+      if (e1) console.warn('friendships accepted error:', e1)
+      if (e2) console.warn('friendships pending error:', e2)
 
       const friendIds = (acceptedRows || []).map(f => f.friend_id)
       const pendingIds = (pendingRows || []).map(f => f.user_id)
-
-      // Load profiles + game data for both sets
       const allIds = [...new Set([...friendIds, ...pendingIds])]
 
       if (!allIds.length) {
         setFriends([])
         setPending([])
-        setLoading(false)
         return
       }
 
-      const [{ data: profiles }, { data: gameData }] = await Promise.all([
+      const [{ data: profilesData }, { data: gameData }] = await Promise.all([
         supabase.from('profiles').select('id, name, avatar_url').in('id', allIds),
         supabase.from('user_game_data').select('user_id, data').in('user_id', allIds),
       ])
 
       function enrich(id) {
-        const p = (profiles || []).find(x => x.id === id) || {}
+        const p = (profilesData || []).find(x => x.id === id) || {}
         const gd = (gameData || []).find(g => g.user_id === id)?.data || {}
         return { id, name: p.name || 'Anônimo', avatar_url: p.avatar_url || null, coins: gd.coins || 0, streak: gd.streak || 0 }
       }
 
       setFriends(friendIds.map(enrich))
       setPending(pendingIds.map(enrich))
-    } catch {
+    } catch (err) {
+      console.error('loadFriends error:', err)
       setFriends([])
       setPending([])
     } finally {
