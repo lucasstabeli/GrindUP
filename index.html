@@ -38,8 +38,56 @@
 
     <title>GrindUP</title>
   </head>
-  <body>
-    <div id="root"></div>
+  <body style="background:#080809;color:#eee;font-family:Inter,system-ui,sans-serif;margin:0">
+    <div id="root">
+      <!-- Fallback shown if React never mounts (black-screen recovery) -->
+      <div id="boot-fallback" style="min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;gap:16px;text-align:center">
+        <div style="font-size:1.2rem;font-weight:800;color:#fff">GrindUP</div>
+        <div style="font-size:0.9rem;color:#888">Carregando...</div>
+        <div id="boot-error" style="display:none;max-width:340px;padding:12px;background:#2a0e0e;border:1px solid #7a1e1e;border-radius:10px;font-size:0.75rem;color:#ff9090;word-break:break-word"></div>
+        <button id="boot-reset" style="display:none;margin-top:20px;padding:12px 20px;background:#fff;color:#000;border:none;border-radius:10px;font-weight:800;font-size:0.9rem;cursor:pointer">
+          🔄 Resetar app
+        </button>
+      </div>
+    </div>
+    <script>
+      // Show fallback UI if React hasn't mounted after 4s
+      setTimeout(function(){
+        var fb = document.getElementById('boot-fallback');
+        if (fb) {
+          var btn = document.getElementById('boot-reset');
+          if (btn) btn.style.display = 'inline-block';
+        }
+      }, 4000);
+      // Capture any boot-time error
+      window.addEventListener('error', function(e){
+        var eb = document.getElementById('boot-error');
+        var btn = document.getElementById('boot-reset');
+        if (eb) { eb.style.display = 'block'; eb.textContent = (e.message || 'Erro') + ' @ ' + (e.filename || '').split('/').pop() + ':' + (e.lineno || '?'); }
+        if (btn) btn.style.display = 'inline-block';
+      });
+      // Reset button handler (inline, runs even if main.jsx fails)
+      document.getElementById('boot-reset').addEventListener('click', async function(){
+        try {
+          if ('serviceWorker' in navigator) {
+            var regs = await navigator.serviceWorker.getRegistrations();
+            for (var i=0;i<regs.length;i++) await regs[i].unregister();
+          }
+          if ('caches' in window) {
+            var keys = await caches.keys();
+            await Promise.all(keys.map(function(k){ return caches.delete(k); }));
+          }
+          var preserved = {};
+          for (var j=0;j<localStorage.length;j++){
+            var k = localStorage.key(j);
+            if (k && k.indexOf('sb-') === 0) preserved[k] = localStorage.getItem(k);
+          }
+          localStorage.clear();
+          for (var p in preserved) localStorage.setItem(p, preserved[p]);
+        } catch(e){}
+        window.location.href = '/?_r=' + Date.now();
+      });
+    </script>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>
