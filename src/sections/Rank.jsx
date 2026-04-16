@@ -207,6 +207,18 @@ export default function Rank() {
   useEffect(() => {
     if (!profile?.id) return
     loadFriends()
+
+    // Reload when user comes back to the tab / app
+    const onVisible = () => { if (document.visibilityState === 'visible') loadFriends() }
+    document.addEventListener('visibilitychange', onVisible)
+
+    // Also poll every 15s so pending requests appear without manual refresh
+    const interval = setInterval(loadFriends, 15000)
+
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible)
+      clearInterval(interval)
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile?.id])
 
@@ -373,15 +385,26 @@ export default function Rank() {
           <h2 style={{ fontSize: '1.4rem', fontWeight: 900, letterSpacing: '-0.5px' }}>Ranking</h2>
           <p style={{ fontSize: '0.8rem', color: 'var(--muted)', marginTop: 2 }}>Compete com seus amigos</p>
         </div>
-        <button
-          onClick={() => { setShowAdd(true); setAddError(''); setAddSuccess('') }}
-          style={{
-            background: 'var(--accent)', color: '#000',
-            border: 'none', borderRadius: 12,
-            padding: '8px 16px', fontSize: '0.82rem',
-            fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit',
-          }}
-        >+ Amigo</button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button
+            onClick={loadFriends}
+            style={{
+              background: 'var(--surface-2)', border: '1px solid var(--line)',
+              borderRadius: 12, padding: '8px 12px', fontSize: '1rem',
+              cursor: 'pointer', lineHeight: 1,
+            }}
+            title="Atualizar"
+          >↻</button>
+          <button
+            onClick={() => { setShowAdd(true); setAddError(''); setAddSuccess('') }}
+            style={{
+              background: 'var(--accent)', color: '#000',
+              border: 'none', borderRadius: 12,
+              padding: '8px 16px', fontSize: '0.82rem',
+              fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit',
+            }}
+          >+ Amigo</button>
+        </div>
       </div>
 
       {/* My code card */}
