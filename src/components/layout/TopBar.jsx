@@ -35,7 +35,9 @@ function AvatarButton({ profile, onClick }) {
 
 export default function TopBar({ title, onAdmin, isAdmin }) {
   const { profile, setTheme, setProfile } = useUserStore()
-  const { permission, enabled, times, requestPermission, toggleEnabled, setTimes, testNow } = useNotifications()
+  const { permission, subStatus, subError, enabled, times, requestPermission, subscribePush, toggleEnabled, setTimes, testPush } = useNotifications()
+  const [testingPush, setTestingPush] = useState(false)
+  const [testResult, setTestResult] = useState('')
 
   const [showTheme, setShowTheme] = useState(false)
   const [showNotif, setShowNotif] = useState(false)
@@ -286,26 +288,47 @@ export default function TopBar({ title, onAdmin, isAdmin }) {
 
       {/* ── NOTIFICATIONS PANEL ── */}
       {showNotif && (
-        <div
-          className="booking-overlay"
-          onClick={e => { if (e.target === e.currentTarget) setShowNotif(false) }}
-        >
+        <div className="booking-overlay" onClick={e => { if (e.target === e.currentTarget) { setShowNotif(false); setTestResult('') } }}>
           <div className="booking-sheet">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
               <h3 style={{ fontSize: '1.1rem', fontWeight: 800 }}>Notificações</h3>
-              <button onClick={() => setShowNotif(false)} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: '1.4rem', cursor: 'pointer', lineHeight: 1 }}>×</button>
+              <button onClick={() => { setShowNotif(false); setTestResult('') }} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: '1.4rem', cursor: 'pointer', lineHeight: 1 }}>×</button>
             </div>
 
-            {permission === 'denied' && (
-              <div style={{ background: 'rgba(232,53,53,.1)', border: '1px solid rgba(232,53,53,.25)', borderRadius: 10, padding: '12px 14px', marginBottom: 16, fontSize: '0.85rem', color: 'var(--danger)' }}>
-                Notificações bloqueadas pelo navegador. Habilite nas configurações do site.
+            {/* iOS install guide */}
+            {/iphone|ipad|ipod/i.test(navigator.userAgent) && subStatus !== 'subscribed' && (
+              <div style={{ background: 'rgba(59,130,246,0.1)', border: '1px solid rgba(59,130,246,0.3)', borderRadius: 10, padding: '12px 14px', marginBottom: 16, fontSize: '0.82rem', color: '#3b82f6' }}>
+                <div style={{ fontWeight: 800, marginBottom: 4 }}>📱 iPhone detectado</div>
+                Para receber notificações:<br />
+                1. Abra no <strong>Safari</strong> (não Chrome)<br />
+                2. Toque em <strong>Compartilhar →</strong> "Adicionar à Tela de Início"<br />
+                3. Abra o app instalado e ative aqui
               </div>
             )}
 
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+            {/* Status badge */}
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 8,
+              padding: '10px 14px', borderRadius: 10, marginBottom: 16,
+              background: subStatus === 'subscribed' ? 'rgba(34,197,94,0.1)' : 'var(--surface-2)',
+              border: `1px solid ${subStatus === 'subscribed' ? 'rgba(34,197,94,0.3)' : 'var(--line)'}`,
+            }}>
+              <span style={{ fontSize: '1rem' }}>
+                {subStatus === 'subscribed' ? '✅' : subStatus === 'subscribing' ? '⏳' : subStatus === 'error' ? '❌' : '⭕'}
+              </span>
+              <span style={{ fontSize: '0.82rem', fontWeight: 700, color: subStatus === 'subscribed' ? '#22c55e' : 'var(--muted)' }}>
+                {subStatus === 'subscribed' ? 'Push ativo — receberá notificações em segundo plano' :
+                  subStatus === 'subscribing' ? 'Ativando...' :
+                  subStatus === 'error' ? (subError || 'Erro ao ativar push') :
+                  'Push não ativado'}
+              </span>
+            </div>
+
+            {/* Toggle */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
               <div>
                 <div style={{ fontWeight: 700, fontSize: '0.95rem' }}>Ativar lembretes</div>
-                <div style={{ fontSize: '0.78rem', color: 'var(--muted)', marginTop: 2 }}>Receberá notificações nos horários abaixo</div>
+                <div style={{ fontSize: '0.78rem', color: 'var(--muted)', marginTop: 2 }}>Notificações nos horários abaixo</div>
               </div>
               <button
                 onClick={() => toggleEnabled(!enabled)}
@@ -323,49 +346,67 @@ export default function TopBar({ title, onAdmin, isAdmin }) {
               </button>
             </div>
 
-            <div style={{ marginBottom: 20 }}>
+            {/* Manual subscribe button if not subscribed */}
+            {subStatus !== 'subscribed' && (
+              <button
+                className="btn btn-primary"
+                onClick={() => { subscribePush() }}
+                disabled={subStatus === 'subscribing'}
+                style={{ marginBottom: 16, opacity: subStatus === 'subscribing' ? 0.6 : 1 }}
+              >
+                {subStatus === 'subscribing' ? '⏳ Ativando...' : '🔔 Ativar notificações push'}
+              </button>
+            )}
+
+            {/* Times */}
+            <div style={{ marginBottom: 16 }}>
               <div style={{ fontSize: '0.72rem', fontWeight: 800, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: 10 }}>Horários</div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                 {times.map((t, i) => (
                   <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <input
-                      type="time"
-                      value={t}
-                      onChange={e => updateTime(i, e.target.value)}
-                      style={{ flex: 1, background: 'var(--surface-2)', border: '1px solid var(--line)', borderRadius: 8, color: 'var(--text)', fontSize: '1rem', padding: '10px 12px', fontFamily: 'inherit', outline: 'none' }}
-                    />
+                    <input type="time" value={t} onChange={e => updateTime(i, e.target.value)}
+                      style={{ flex: 1, background: 'var(--surface-2)', border: '1px solid var(--line)', borderRadius: 8, color: 'var(--text)', fontSize: '1rem', padding: '10px 12px', fontFamily: 'inherit', outline: 'none' }} />
                     {times.length > 1 && (
                       <button onClick={() => setTimes(times.filter((_, j) => j !== i))} style={{ background: 'none', border: 'none', color: 'var(--danger)', cursor: 'pointer', fontSize: '1.2rem', lineHeight: 1 }}>×</button>
                     )}
                   </div>
                 ))}
                 {times.length < 4 && (
-                  <button
-                    onClick={() => setTimes([...times, '12:00'])}
-                    className="btn"
-                    style={{ background: 'var(--surface-2)', color: 'var(--muted)', border: '1px dashed var(--line)', textTransform: 'none', letterSpacing: 0, padding: '10px', fontSize: '0.85rem' }}
-                  >
+                  <button onClick={() => setTimes([...times, '12:00'])} className="btn"
+                    style={{ background: 'var(--surface-2)', color: 'var(--muted)', border: '1px dashed var(--line)', textTransform: 'none', letterSpacing: 0, padding: '10px', fontSize: '0.85rem' }}>
                     + Adicionar horário
                   </button>
                 )}
               </div>
             </div>
 
+            {/* Test button */}
+            {testResult && (
+              <div style={{ padding: '10px 14px', borderRadius: 10, marginBottom: 10, fontSize: '0.85rem', fontWeight: 700,
+                background: testResult === 'ok' ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)',
+                color: testResult === 'ok' ? '#22c55e' : 'var(--danger)',
+                border: `1px solid ${testResult === 'ok' ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.3)'}` }}>
+                {testResult === 'ok' ? '✅ Notificação enviada! Feche o app e aguarde.' : '❌ ' + testResult}
+              </div>
+            )}
             <button
               className="btn"
-              onClick={() => { testNow(); setShowNotif(false) }}
-              disabled={permission !== 'granted'}
+              onClick={async () => {
+                setTestingPush(true)
+                setTestResult('')
+                const ok = await testPush()
+                setTestResult(ok ? 'ok' : 'Falhou. Verifique se o push está ativado.')
+                setTestingPush(false)
+              }}
+              disabled={testingPush}
               style={{
-                width: '100%',
-                background: permission === 'granted' ? 'var(--accent-soft)' : 'var(--surface-2)',
-                color: permission === 'granted' ? 'var(--accent)' : 'var(--muted)',
-                border: `1px solid ${permission === 'granted' ? 'var(--accent)' : 'var(--line)'}`,
-                padding: '12px', borderRadius: 10, fontSize: '0.9rem', fontWeight: 700,
-                textTransform: 'none', letterSpacing: 0,
-                cursor: permission === 'granted' ? 'pointer' : 'not-allowed',
+                width: '100%', background: 'var(--accent-soft)', color: 'var(--accent)',
+                border: '1px solid var(--accent)', padding: '12px', borderRadius: 10,
+                fontSize: '0.9rem', fontWeight: 700, textTransform: 'none', letterSpacing: 0,
+                cursor: testingPush ? 'wait' : 'pointer', opacity: testingPush ? 0.6 : 1,
               }}
             >
-              Enviar notificação de teste
+              {testingPush ? '⏳ Enviando...' : '📲 Testar notificação agora'}
             </button>
           </div>
         </div>

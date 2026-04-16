@@ -15,7 +15,6 @@ const DEFAULT_MESSAGES = [
   'Hora de focar. Você consegue! 🏆',
 ]
 
-// Convert a base64url string to a Uint8Array (needed for VAPID)
 function urlBase64ToUint8Array(base64String) {
   const padding = '='.repeat((4 - (base64String.length % 4)) % 4)
   const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/')
@@ -27,67 +26,146 @@ export function useNotifications() {
   const { D, save } = useGameData()
   const { profile } = useUserStore()
   const timersRef = useRef([])
+
   const [permission, setPermission] = useState(() => {
     try { return Notification.permission } catch { return 'denied' }
   })
+  // 'idle' | 'subscribing' | 'subscribed' | 'error'
+  const [subStatus, setSubStatus] = useState('idle')
+  const [subError, setSubError] = useState('')
 
-  // ── REQUEST PERMISSION + WEB PUSH SUBSCRIPTION ──
-  async function requestPermission() {
-    try {
-      const res = await Notification.requestPermission()
-      setPermission(res)
-      if (res === 'granted') await subscribePush()
-      return res
-    } catch {
-      return 'denied'
-    }
-  }
-
-  // Subscribe to Web Push and store in Supabase
+  // ── Subscribe to Web Push ──
   async function subscribePush() {
-    if (!('serviceWorker' in navigator) || !('PushManager' in window)) return
-    if (!VAPID_PUBLIC_KEY || !profile?.id) return
+    if (!('serviceWorker' in navigator)) {
+      setSubError('Service Worker não suportado neste browser.')
+      setSubStatus('error')
+      return false
+    }
+    if (!('PushManager' in window)) {
+      setSubError('Push não suportado. No iPhone: instale o app e use o Safari.')
+      setSubStatus('error')
+      return false
+    }
+    if (!VAPID_PUBLIC_KEY) {
+      setSubError('Chave VAPID não configurada.')
+      setSubStatus('error')
+      return false
+    }
+    if (!profile?.id) {
+      setSubError('Faça login primeiro.')
+      setSubStatus('error')
+      return false
+    }
+
+    setSubStatus('subscribing')
+    setSubError('')
+
     try {
       const reg = await navigator.serviceWorker.ready
-      const existing = await reg.pushManager.getSubscription()
-      const sub = existing || await reg.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
-      })
-      // Store subscription in Supabase
+      let sub = await reg.pushManager.getSubscription()
+
+      if (!sub) {
+        sub = await reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
+        })
+      }
+
       const subJson = sub.toJSON()
-      await supabase.from('push_subscriptions').upsert({
+      const { error } = await supabase.from('push_subscriptions').upsert({
         user_id: profile.id,
         endpoint: subJson.endpoint,
         p256dh: subJson.keys?.p256dh,
         auth: subJson.keys?.auth,
         updated_at: new Date().toISOString(),
       }, { onConflict: 'user_id' })
+
+      if (error) throw error
+
+      setSubStatus('subscribed')
+      return true
     } catch (err) {
-      console.warn('Push subscribe failed:', err)
+      console.error('subscribePush error:', err)
+      const msg = err?.message || String(err)
+      if (msg.includes('permission') || msg.includes('denied')) {
+        setSubError('Permissão negada. Habilite nas configurações do celular.')
+      } else if (msg.includes('install') || msg.includes('manifest')) {
+        setSubError('Instale o app na tela inicial primeiro.')
+      } else {
+        setSubError('Erro ao ativar: ' + msg.slice(0, 80))
+      }
+      setSubStatus('error')
+      return false
     }
   }
 
-  // Unsubscribe from push
   async function unsubscribePush() {
-    if (!('serviceWorker' in navigator)) return
     try {
-      const reg = await navigator.serviceWorker.ready
-      const sub = await reg.pushManager.getSubscription()
-      if (sub) await sub.unsubscribe()
+      if ('serviceWorker' in navigator) {
+        const reg = await navigator.serviceWorker.ready
+        const sub = await reg.pushManager.getSubscription()
+        if (sub) await sub.unsubscribe()
+      }
       if (profile?.id) {
         await supabase.from('push_subscriptions').delete().eq('user_id', profile.id)
       }
+      setSubStatus('idle')
     } catch {}
   }
 
-  // ── LOCAL SCHEDULE (backup: works when tab is open) ──
+  // ── Request permission ──
+  async function requestPermission() {
+    try {
+      const res = await Notification.requestPermission()
+      setPermission(res)
+      if (res === 'granted') {
+        await subscribePush()
+      } else {
+        setSubError('Permissão negada. Vá em Configurações do celular e habilite notificações para este site.')
+        setSubStatus('error')
+      }
+      return res
+    } catch {
+      return 'denied'
+    }
+  }
+
+  // Check if already subscribed on mount
+  useEffect(() => {
+    if (!profile?.id || permission !== 'granted') return
+    supabase.from('push_subscriptions').select('user_id').eq('user_id', profile.id).maybeSingle()
+      .then(({ data }) => {
+        if (data) setSubStatus('subscribed')
+      })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profile?.id, permission])
+
+  // ── Send real push via Edge Function ──
+  async function testPush() {
+    if (subStatus !== 'subscribed') {
+      // Try to subscribe first
+      const ok = await subscribePush()
+      if (!ok) return false
+    }
+    try {
+      const { error } = await supabase.functions.invoke('send-push', {
+        body: { test: true, userId: profile?.id },
+      })
+      return !error
+    } catch {
+      // Fallback to local notification
+      sendLocalNotification('Teste de notificação! 🔥')
+      return true
+    }
+  }
+
+  // ── Local schedule (works while app is open) ──
   function clearTimers() {
     timersRef.current.forEach(clearTimeout)
     timersRef.current = []
   }
 
-  function sendNotification(body) {
+  function sendLocalNotification(body) {
     const opts = {
       body,
       icon: '/icons/icon-192.png',
@@ -102,13 +180,11 @@ export function useNotifications() {
 
   function scheduleForToday() {
     clearTimers()
-    const enabled = D?.notifSettings?.enabled
-    if (!enabled || permission !== 'granted') return
-
+    const notifEnabled = D?.notifSettings?.enabled
+    if (!notifEnabled || permission !== 'granted') return
     const times = D?.notifSettings?.times || DEFAULT_TIMES
     const messages = D?.notifSettings?.messages || DEFAULT_MESSAGES
     const now = Date.now()
-
     times.forEach(time => {
       const [h, m] = time.split(':').map(Number)
       const target = new Date()
@@ -116,8 +192,7 @@ export function useNotifications() {
       const diff = target.getTime() - now
       if (diff > 0 && diff < 86_400_000) {
         const id = setTimeout(() => {
-          const body = messages[Math.floor(Math.random() * messages.length)]
-          sendNotification(body)
+          sendLocalNotification(messages[Math.floor(Math.random() * messages.length)])
         }, diff)
         timersRef.current.push(id)
       }
@@ -129,14 +204,6 @@ export function useNotifications() {
     return clearTimers
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [D?.notifSettings?.enabled, JSON.stringify(D?.notifSettings?.times), permission])
-
-  // Subscribe when permission is granted and profile is ready
-  useEffect(() => {
-    if (permission === 'granted' && profile?.id && D?.notifSettings?.enabled) {
-      subscribePush()
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [permission, profile?.id, D?.notifSettings?.enabled])
 
   function toggleEnabled(val) {
     if (!D) return
@@ -157,19 +224,16 @@ export function useNotifications() {
     save({ ...D, notifSettings: { ...(D.notifSettings || {}), times } })
   }
 
-  function testNow() {
-    const messages = D?.notifSettings?.messages || DEFAULT_MESSAGES
-    const body = messages[Math.floor(Math.random() * messages.length)]
-    sendNotification(body)
-  }
-
   return {
     permission,
+    subStatus,
+    subError,
     enabled: D?.notifSettings?.enabled || false,
     times: D?.notifSettings?.times || DEFAULT_TIMES,
     requestPermission,
+    subscribePush,
     toggleEnabled,
     setTimes,
-    testNow,
+    testPush,
   }
 }
