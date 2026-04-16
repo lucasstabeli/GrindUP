@@ -244,38 +244,27 @@ export default function Rank() {
     if (!profile?.id) return
     if (showSpinner) setLoading(true)
 
-    // Safety timeout — never hang forever
-    const timer = setTimeout(() => setLoading(false), 8000)
+    const timer = setTimeout(() => { setLoading(false) }, 8000)
 
     try {
-      const [res1, res2] = await Promise.all([
-        supabase.from('friendships').select('friend_id').eq('user_id', profile.id).eq('status', 'accepted'),
-        supabase.from('friendships').select('user_id').eq('friend_id', profile.id).eq('status', 'pending'),
+      // Use RPCs (SECURITY DEFINER) — bypasses all RLS issues
+      const [{ data: friendRows }, { data: pendingRows }, { data: gameData }] = await Promise.all([
+        supabase.rpc('get_accepted_friends'),
+        supabase.rpc('get_pending_requests'),
+        supabase.from('user_game_data').select('user_id, data').neq('user_id', profile.id),
       ])
 
-      const friendIds = (res1.data || []).map(f => f.friend_id)
-      const pendingIds = (res2.data || []).map(f => f.user_id)
-      const allIds = [...new Set([...friendIds, ...pendingIds])]
-
-      if (!allIds.length) {
-        setFriends([])
-        setPending([])
-        return
+      const enrichFriend = (row) => {
+        const gd = (gameData || []).find(g => g.user_id === row.friend_id)?.data || {}
+        return { id: row.friend_id, name: row.friend_name || 'Anônimo', avatar_url: row.friend_avatar || null, coins: gd.coins || 0, streak: gd.streak || 0 }
       }
 
-      const [res3, res4] = await Promise.all([
-        supabase.from('profiles').select('id, name, avatar_url').in('id', allIds),
-        supabase.from('user_game_data').select('user_id, data').in('user_id', allIds),
-      ])
-
-      function enrich(id) {
-        const p = (res3.data || []).find(x => x.id === id) || {}
-        const gd = (res4.data || []).find(g => g.user_id === id)?.data || {}
-        return { id, name: p.name || 'Anônimo', avatar_url: p.avatar_url || null, coins: gd.coins || 0, streak: gd.streak || 0 }
-      }
-
-      setFriends(friendIds.map(enrich))
-      setPending(pendingIds.map(enrich))
+      setFriends((friendRows || []).map(enrichFriend))
+      setPending((pendingRows || []).map(row => ({
+        id: row.requester_id,
+        name: row.requester_name || 'Anônimo',
+        avatar_url: row.requester_avatar || null,
+      })))
     } catch (err) {
       console.error('loadFriends:', err)
       setFriends([])

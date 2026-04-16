@@ -41,6 +41,9 @@ export default function TopBar({ title, onAdmin, isAdmin }) {
   const [showNotif, setShowNotif] = useState(false)
   const [showProfile, setShowProfile] = useState(false)
   const [uploading, setUploading] = useState(false)
+  const [editingName, setEditingName] = useState(false)
+  const [nameValue, setNameValue] = useState('')
+  const [savingName, setSavingName] = useState(false)
   const dropRef = useRef(null)
   const fileRef = useRef(null)
   const isFemale = profile?.gender === 'female'
@@ -63,6 +66,16 @@ export default function TopBar({ title, onAdmin, isAdmin }) {
 
   async function handleLogout() {
     await supabase.auth.signOut()
+  }
+
+  async function saveName() {
+    const trimmed = nameValue.trim()
+    if (!trimmed || !profile?.id) return
+    setSavingName(true)
+    await supabase.from('profiles').update({ name: trimmed }).eq('id', profile.id)
+    setProfile({ ...profile, name: trimmed })
+    setEditingName(false)
+    setSavingName(false)
   }
 
   function updateTime(idx, val) {
@@ -165,12 +178,12 @@ export default function TopBar({ title, onAdmin, isAdmin }) {
         >
           <div className="booking-sheet">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
-              <h3 style={{ fontSize: '1.1rem', fontWeight: 800 }}>Foto de perfil</h3>
-              <button onClick={() => setShowProfile(false)} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: '1.5rem', cursor: 'pointer', lineHeight: 1 }}>×</button>
+              <h3 style={{ fontSize: '1.1rem', fontWeight: 800 }}>Perfil</h3>
+              <button onClick={() => { setShowProfile(false); setEditingName(false) }} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: '1.5rem', cursor: 'pointer', lineHeight: 1 }}>×</button>
             </div>
 
-            {/* Current avatar */}
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: 28, gap: 12 }}>
+            {/* Avatar */}
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: 20, gap: 10 }}>
               <div style={{
                 width: 96, height: 96, borderRadius: '50%',
                 background: 'var(--accent-soft)', border: '3px solid var(--accent)',
@@ -184,8 +197,51 @@ export default function TopBar({ title, onAdmin, isAdmin }) {
                   </span>
                 )}
               </div>
-              <div style={{ fontWeight: 700, fontSize: '1rem' }}>{profile?.name || 'Sem nome'}</div>
               {uploading && <div style={{ fontSize: '0.82rem', color: 'var(--muted)' }}>Enviando foto...</div>}
+            </div>
+
+            {/* Name edit */}
+            <div style={{ marginBottom: 20 }}>
+              <div style={{ fontSize: '0.65rem', fontWeight: 800, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: 8 }}>Nome</div>
+              {editingName ? (
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <input
+                    value={nameValue}
+                    onChange={e => setNameValue(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && saveName()}
+                    autoFocus
+                    maxLength={40}
+                    style={{
+                      flex: 1, padding: '10px 14px', borderRadius: 10,
+                      border: '1px solid var(--accent)', background: 'var(--surface-2)',
+                      color: 'var(--text)', fontSize: '0.95rem', fontWeight: 700,
+                      fontFamily: 'inherit', outline: 'none',
+                    }}
+                  />
+                  <button
+                    onClick={saveName}
+                    disabled={savingName || !nameValue.trim()}
+                    style={{
+                      background: 'var(--accent)', color: '#000', border: 'none',
+                      borderRadius: 10, padding: '0 16px', fontWeight: 800,
+                      cursor: 'pointer', fontFamily: 'inherit', fontSize: '0.85rem',
+                      opacity: savingName ? 0.6 : 1,
+                    }}
+                  >{savingName ? '...' : 'Salvar'}</button>
+                  <button
+                    onClick={() => setEditingName(false)}
+                    style={{ background: 'none', border: '1px solid var(--line)', borderRadius: 10, padding: '0 10px', color: 'var(--muted)', cursor: 'pointer' }}
+                  >✕</button>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: 'var(--surface-2)', borderRadius: 10, border: '1px solid var(--line)' }}>
+                  <span style={{ fontWeight: 700, fontSize: '0.95rem' }}>{profile?.name || 'Sem nome'}</span>
+                  <button
+                    onClick={() => { setNameValue(profile?.name || ''); setEditingName(true) }}
+                    style={{ background: 'none', border: 'none', color: 'var(--accent)', fontSize: '0.82rem', fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}
+                  >✏️ Editar</button>
+                </div>
+              )}
             </div>
 
             {/* Actions */}
