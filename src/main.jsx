@@ -8,34 +8,20 @@ import { supabase } from './lib/supabase'
 import { useUserStore } from './stores/useUserStore'
 import './index.css'
 
-// ── AUTO CACHE-BUST ──
-// Runs once per device on the v4+ rollout. If an old SW is controlling
-// the page (from v3 or earlier), we unregister it, clear caches, and reload.
-const BUILD_ID = 'grindup-v4-2026-04-16'
-try {
-  const marker = localStorage.getItem('grindup_cleanup_v4')
-  const hasOldSW = typeof navigator !== 'undefined'
-    && 'serviceWorker' in navigator
-    && navigator.serviceWorker.controller
-  if (marker !== '1' && hasOldSW) {
-    localStorage.setItem('grindup_cleanup_v4', '1')
-    ;(async () => {
-      try {
-        const regs = await navigator.serviceWorker.getRegistrations()
-        for (const r of regs) await r.unregister()
-        if ('caches' in window) {
-          const keys = await caches.keys()
-          await Promise.all(keys.map(k => caches.delete(k)))
-        }
-      } catch {}
-      window.location.reload()
-    })()
-  } else if (marker !== '1') {
-    // No old SW to clean — just mark it done
-    localStorage.setItem('grindup_cleanup_v4', '1')
-  }
-  localStorage.setItem('grindup_build_id', BUILD_ID)
-} catch {}
+// Background cache cleanup: unregister old SWs and clear old caches
+// ONCE per page load, without blocking/reloading. Safe to run every time.
+;(async () => {
+  try {
+    if (sessionStorage.getItem('grindup_cleaned') === '1') return
+    sessionStorage.setItem('grindup_cleaned', '1')
+    if ('caches' in window) {
+      const keys = await caches.keys()
+      await Promise.all(
+        keys.filter(k => k !== 'grindupv4').map(k => caches.delete(k))
+      )
+    }
+  } catch {}
+})()
 
 // Register SW on load (non-blocking)
 if ('serviceWorker' in navigator) {
