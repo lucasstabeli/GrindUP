@@ -36,35 +36,14 @@ function hideBootFallback() {
   if (fb) fb.remove()
 }
 
-supabase.auth.onAuthStateChange(async (event, session) => {
-  const { setUser, setProfile, clearUser } = useUserStore.getState()
-
+// WARNING: never call supabase.from() or supabase.auth.getSession() inside this
+// callback — those methods acquire the auth lock internally, but the callback
+// already runs inside the lock (lockAcquired=true), causing a permanent deadlock.
+// Profile loading is handled by App.jsx's useEffect instead.
+supabase.auth.onAuthStateChange((event, session) => {
+  const { setUser, clearUser } = useUserStore.getState()
   if (session?.user) {
     setUser(session.user)
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', session.user.id)
-      .single()
-
-    if (profile) {
-      setProfile(profile)
-    } else if (event === 'SIGNED_IN') {
-      const meta = session.user.user_metadata || {}
-      const { data: newProfile } = await supabase
-        .from('profiles')
-        .upsert({
-          id: session.user.id,
-          name: meta.full_name || meta.name || 'Usuário',
-          email: session.user.email,
-          gender: meta.gender || null,
-          theme: meta.theme || null,
-          role: 'client',
-        })
-        .select()
-        .single()
-      if (newProfile) setProfile(newProfile)
-    }
   } else {
     clearUser()
   }

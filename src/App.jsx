@@ -27,12 +27,9 @@ function ProtectedRoute({ children, authReady }) {
 }
 
 export default function App() {
-  const { user, profile } = useUserStore()
+  const { user, profile, setProfile } = useUserStore()
   const [authReady, setAuthReady] = useState(false)
 
-  // Wait for Supabase to tell us whether we have a session or not.
-  // This prevents the initial flash of "complete-profile" when we have
-  // a session but profile hasn't been fetched yet.
   useEffect(() => {
     let mounted = true
     supabase.auth.getSession().then(() => {
@@ -40,10 +37,45 @@ export default function App() {
     }).catch(() => {
       if (mounted) setAuthReady(true)
     })
-    // Safety: even if getSession never resolves, unblock after 3s
     const t = setTimeout(() => { if (mounted) setAuthReady(true) }, 3000)
     return () => { mounted = false; clearTimeout(t) }
   }, [])
+
+  // Load profile outside the auth lock context — calling supabase.from() inside
+  // onAuthStateChange causes a deadlock (see main.jsx), so we do it here instead.
+  useEffect(() => {
+    if (!user) return
+    let cancelled = false
+
+    async function loadProfile() {
+      const { data: existing } = await supabase
+        .from('profiles').select('*').eq('id', user.id).single()
+      if (cancelled) return
+
+      if (existing) { setProfile(existing); return }
+
+      // Profile missing → create it (new OAuth/email signup)
+      const meta = user.user_metadata || {}
+      await supabase.from('profiles').insert({
+        id: user.id,
+        name: meta.full_name || meta.name || 'Usuário',
+        email: user.email,
+        gender: meta.gender || null,
+        theme: meta.theme || null,
+        role: 'client',
+      }).select().single()
+      if (cancelled) return
+
+      // Fetch again — handles both fresh insert and race-condition insert failure
+      const { data: retry } = await supabase
+        .from('profiles').select('*').eq('id', user.id).single()
+      if (cancelled) return
+      if (retry) setProfile(retry)
+    }
+
+    loadProfile().catch(console.error)
+    return () => { cancelled = true }
+  }, [user?.id])
 
   if (!authReady) return <LoadingScreen />
 

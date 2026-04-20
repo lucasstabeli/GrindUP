@@ -247,19 +247,18 @@ export default function Rank() {
     const timer = setTimeout(() => { setLoading(false) }, 8000)
 
     try {
-      // Use RPCs (SECURITY DEFINER) — bypasses all RLS issues
-      const [{ data: friendRows }, { data: pendingRows }, { data: gameData }] = await Promise.all([
+      const [{ data: friendRows }, { data: pendingRows }] = await Promise.all([
         supabase.rpc('get_accepted_friends'),
         supabase.rpc('get_pending_requests'),
-        supabase.from('user_game_data').select('user_id, data').neq('user_id', profile.id),
       ])
 
-      const enrichFriend = (row) => {
-        const gd = (gameData || []).find(g => g.user_id === row.friend_id)?.data || {}
-        return { id: row.friend_id, name: row.friend_name || 'Anônimo', avatar_url: row.friend_avatar || null, coins: gd.coins || 0, streak: gd.streak || 0 }
-      }
-
-      setFriends((friendRows || []).map(enrichFriend))
+      setFriends((friendRows || []).map(row => ({
+        id: row.friend_id,
+        name: row.friend_name || 'Anônimo',
+        avatar_url: row.friend_avatar || null,
+        coins: row.coins || 0,
+        streak: row.streak || 0,
+      })))
       setPending((pendingRows || []).map(row => ({
         id: row.requester_id,
         name: row.requester_name || 'Anônimo',

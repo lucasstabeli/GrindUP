@@ -57,7 +57,7 @@ export default function Signup() {
   if (step === 1) {
     return (
       <div className="auth-page">
-        <div className="auth-logo">GrindUP</div>
+        <div className="auth-logo">Grind<span style={{ color: '#fff' }}>UP</span></div>
         <p className="auth-subtitle">Crie sua conta</p>
         <form className="auth-form" onSubmit={e => { e.preventDefault(); setStep(2) }}>
           {error && <div className="auth-error">{error}</div>}

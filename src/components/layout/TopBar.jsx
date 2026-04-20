@@ -152,7 +152,9 @@ export default function TopBar({ title, onAdmin, isAdmin }) {
   return (
     <>
       <div className="topbar">
-        <span className="topbar-logo">{title || 'GrindUP'}</span>
+        <span className="topbar-logo">
+          {title || <>Grind<span style={{ color: '#fff' }}>UP</span></>}
+        </span>
         <div className="topbar-actions" ref={dropRef}>
 
           {/* Notifications */}

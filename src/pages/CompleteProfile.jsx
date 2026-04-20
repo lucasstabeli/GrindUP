@@ -41,7 +41,7 @@ export default function CompleteProfile() {
 
   return (
     <div className="auth-page">
-      <div className="auth-logo">GrindUP</div>
+      <div className="auth-logo">Grind<span style={{ color: '#fff' }}>UP</span></div>
       <p className="auth-subtitle">Personalize seu app</p>
       <div style={{ width: '100%', maxWidth: 400, display: 'flex', flexDirection: 'column', gap: 20 }}>
         {error && <div className="auth-error">{error}</div>}
