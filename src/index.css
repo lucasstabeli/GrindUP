@@ -274,7 +274,7 @@ p { line-height: 1.6; }
   backdrop-filter: blur(28px) saturate(1.8);
   -webkit-backdrop-filter: blur(28px) saturate(1.8);
   border-bottom: 1px solid var(--line);
-  padding: 11px 16px;
+  padding: calc(11px + env(safe-area-inset-top)) 16px 11px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1090,3 +1090,13 @@ p { line-height: 1.6; }
 ::-webkit-scrollbar { width: 4px; height: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--line); border-radius: 2px; }
+
+/* ── LANDSCAPE LOCK ── */
+@media screen and (orientation: landscape) and (max-height: 500px) {
+  #landscape-block {
+    display: flex !important;
+  }
+  #root > *:not(#landscape-block) {
+    display: none !important;
+  }
+}
