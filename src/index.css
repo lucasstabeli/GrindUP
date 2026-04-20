@@ -528,7 +528,20 @@ p { line-height: 1.6; }
 .task-main { flex: 1; min-width: 0; }
 .task-main h3 { font-size: 0.93rem; font-weight: 700; margin-bottom: 3px; letter-spacing: -0.2px; }
 .task-main p { font-size: 0.78rem; color: var(--muted); line-height: 1.4; }
-.task-status { flex-shrink: 0; }
+.task-status {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+.task-reward {
+  font-size: 0.72rem;
+  font-weight: 800;
+  color: var(--success);
+}
+.hint-fail { color: var(--danger); font-size: 0.75rem; font-weight: 700; }
+.hint-done { color: var(--success); font-size: 0.75rem; font-weight: 700; }
 .mini-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 7px; }
 
 /* ── CHIP / TAG ── */

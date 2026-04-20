@@ -1,7 +1,7 @@
 import { useRef, useEffect, useCallback } from 'react'
 import { fmt } from '../hooks/useGameData'
 
-const BASE_OPACITY = 0.28
+const BASE_OPACITY = 0
 
 export default function SwipeTaskCard({ task, index, onComplete, onFail, onUndo }) {
   const cardRef = useRef(null)
@@ -142,16 +142,14 @@ export default function SwipeTaskCard({ task, index, onComplete, onFail, onUndo 
       onTouchEnd={onEnd}
       onMouseDown={(e) => { e.preventDefault(); onStart(e.clientX, e.clientY) }}
     >
-      {/* Left indicator: penalty (swipe left = fail) */}
+      {/* Swipe feedback overlays — hidden at rest, revealed by JS during drag */}
       {pen > 0 && (
-        <div className="sh-fail" style={{ opacity: BASE_OPACITY }}>
+        <div className="sh-fail" style={{ opacity: 0 }}>
           <span className="sh-icon">✕</span>
           <span className="sh-coins">-{pen}🪙</span>
         </div>
       )}
-
-      {/* Right indicator: reward (swipe right = complete) */}
-      <div className="sh-done" style={{ opacity: BASE_OPACITY }}>
+      <div className="sh-done" style={{ opacity: 0 }}>
         <span className="sh-icon">✓</span>
         <span className="sh-coins">+{task.reward}🪙</span>
       </div>
@@ -164,12 +162,13 @@ export default function SwipeTaskCard({ task, index, onComplete, onFail, onUndo 
         </div>
         <div className="task-status">
           <span className="tag">Pendente</span>
+          <span className="task-reward">+{task.reward}🪙</span>
         </div>
       </div>
       <div className="swipe-hint-row">
-        <span>← falhar</span>
+        <span className="hint-fail">← falhar{pen > 0 ? ` -${pen}🪙` : ''}</span>
         <span style={{ opacity: 0.4, fontSize: 10 }}>deslize</span>
-        <span>concluir →</span>
+        <span className="hint-done">+{task.reward}🪙 concluir →</span>
       </div>
     </div>
   )
