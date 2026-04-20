@@ -25,7 +25,7 @@ export default function Login() {
 
   return (
     <div className="auth-page">
-      <div className="auth-logo">VidaFit</div>
+      <div className="auth-logo">GrindUP</div>
       <p className="auth-subtitle">Saúde, treino e bem-estar em um só lugar</p>
       <form className="auth-form" onSubmit={handleSubmit}>
         {error && <div className="auth-error">{error}</div>}

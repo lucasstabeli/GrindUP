@@ -152,7 +152,7 @@ export default function TopBar({ title, onAdmin, isAdmin }) {
   return (
     <>
       <div className="topbar">
-        <span className="topbar-logo">{title || 'VidaFit'}</span>
+        <span className="topbar-logo">{title || 'GrindUP'}</span>
         <div className="topbar-actions" ref={dropRef}>
 
           {/* Notifications */}

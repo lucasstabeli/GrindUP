@@ -15,7 +15,7 @@ export default function ProfessionalApp() {
 
   return (
     <div style={{ minHeight: '100dvh', background: 'var(--bg)' }}>
-      <TopBar title="VidaFit Pro" />
+      <TopBar title="GrindUP Pro" />
       {panels[profile?.role] || (
         <div className="main-content">
           <div className="plan-empty">
