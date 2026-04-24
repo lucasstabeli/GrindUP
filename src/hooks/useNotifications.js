@@ -92,11 +92,11 @@ export function useNotifications() {
       setPermission('granted')
       setSubStatus('subscribed')
 
-      // Register with OneSignal in background (don't block UI on this)
+      // Register with OneSignal in background via deferred queue (don't block UI)
       window.__osReady?.then(() => {
-        const os = window.OneSignal
-        if (!os) return
-        os.login(userId).catch(() => {})
+        window.OneSignalDeferred?.push?.((os) => {
+          os.login(userId).catch(() => {})
+        })
       }).catch(() => {})
 
       return true

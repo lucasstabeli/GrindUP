@@ -9,8 +9,8 @@ import { supabase } from './lib/supabase'
 import { useUserStore } from './stores/useUserStore'
 import './index.css'
 
-// Initialize OneSignal
-OneSignal.init({
+// Initialize OneSignal — guarda a promise para aguardar antes de usar
+window.__osReady = OneSignal.init({
   appId: 'aeb9dee6-91d7-4806-b7b5-b01f7851d4b7',
   serviceWorkerPath: '/sw.js',
   serviceWorkerParam: { scope: '/' },
@@ -32,12 +32,6 @@ OneSignal.init({
   } catch {}
 })()
 
-// Register SW on load (non-blocking)
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js').catch(() => {})
-  })
-}
 
 // Remove boot fallback once React takes over
 function hideBootFallback() {
