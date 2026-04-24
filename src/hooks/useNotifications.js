@@ -192,7 +192,14 @@ export function useNotifications() {
       const diff = target.getTime() - now
       if (diff > 0 && diff < 86_400_000) {
         const id = setTimeout(() => {
-          sendLocalNotification(messages[Math.floor(Math.random() * messages.length)])
+          const msg = messages[Math.floor(Math.random() * messages.length)]
+          const userId = profile?.id
+          if (userId) {
+            supabase.functions.invoke('send-push', { body: { userId, body: msg } })
+              .catch(() => sendLocalNotification(msg))
+          } else {
+            sendLocalNotification(msg)
+          }
         }, diff)
         timersRef.current.push(id)
       }
@@ -207,21 +214,22 @@ export function useNotifications() {
 
   function toggleEnabled(val) {
     if (!D) return
+    const utcOffset = -new Date().getTimezoneOffset()
     if (val && permission !== 'granted') {
       requestPermission().then(res => {
         if (res === 'granted') {
-          save({ ...D, notifSettings: { ...(D.notifSettings || {}), enabled: true } })
+          save({ ...D, notifSettings: { ...(D.notifSettings || {}), enabled: true, utcOffset } })
         }
       })
       return
     }
     if (!val) unsubscribePush()
-    save({ ...D, notifSettings: { ...(D.notifSettings || {}), enabled: val } })
+    save({ ...D, notifSettings: { ...(D.notifSettings || {}), enabled: val, utcOffset } })
   }
 
   function setTimes(times) {
     if (!D) return
-    save({ ...D, notifSettings: { ...(D.notifSettings || {}), times } })
+    save({ ...D, notifSettings: { ...(D.notifSettings || {}), times, utcOffset: -new Date().getTimezoneOffset() } })
   }
 
   return {
