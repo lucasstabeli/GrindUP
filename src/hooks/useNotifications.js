@@ -22,17 +22,42 @@ function urlBase64ToUint8Array(base64String) {
   return new Uint8Array([...rawData].map(c => c.charCodeAt(0)))
 }
 
+// ── localStorage helpers ──
+function lsKey(userId) { return `grindupNotif_${userId}` }
+function lsGet(userId) {
+  try { return JSON.parse(localStorage.getItem(lsKey(userId)) || 'null') } catch { return null }
+}
+function lsSave(userId, settings) {
+  try { localStorage.setItem(lsKey(userId), JSON.stringify(settings)) } catch {}
+}
+
 export function useNotifications() {
-  const { D, save, saveImmediate } = useGameData()
+  const { D, saveImmediate } = useGameData()
   const { profile } = useUserStore()
   const timersRef = useRef([])
 
   const [permission, setPermission] = useState(() => {
     try { return Notification.permission } catch { return 'denied' }
   })
-  // 'idle' | 'subscribing' | 'subscribed' | 'error'
   const [subStatus, setSubStatus] = useState('idle')
   const [subError, setSubError] = useState('')
+
+  // ── Lê notifSettings: localStorage tem prioridade sobre Supabase ──
+  const userId = profile?.id
+  const lsNotif = userId ? lsGet(userId) : null
+  const dbNotif = D?.notifSettings || {}
+  const notifSettings = lsNotif || dbNotif
+
+  // Ao montar: se localStorage tem dados diferentes do banco, sincroniza pro banco
+  useEffect(() => {
+    if (!D || !userId || !lsNotif) return
+    const dbStr = JSON.stringify(dbNotif)
+    const lsStr = JSON.stringify(lsNotif)
+    if (dbStr !== lsStr) {
+      saveImmediate({ ...D, notifSettings: lsNotif })
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId, !!D])
 
   // ── Subscribe to Web Push ──
   async function subscribePush() {
@@ -51,7 +76,7 @@ export function useNotifications() {
       setSubStatus('error')
       return false
     }
-    if (!profile?.id) {
+    if (!userId) {
       setSubError('Faça login primeiro.')
       setSubStatus('error')
       return false
@@ -73,7 +98,7 @@ export function useNotifications() {
 
       const subJson = sub.toJSON()
       const { error } = await supabase.from('push_subscriptions').upsert({
-        user_id: profile.id,
+        user_id: userId,
         endpoint: subJson.endpoint,
         p256dh: subJson.keys?.p256dh,
         auth: subJson.keys?.auth,
@@ -106,8 +131,8 @@ export function useNotifications() {
         const sub = await reg.pushManager.getSubscription()
         if (sub) await sub.unsubscribe()
       }
-      if (profile?.id) {
-        await supabase.from('push_subscriptions').delete().eq('user_id', profile.id)
+      if (userId) {
+        await supabase.from('push_subscriptions').delete().eq('user_id', userId)
       }
       setSubStatus('idle')
     } catch {}
@@ -132,34 +157,32 @@ export function useNotifications() {
 
   // Check if already subscribed on mount
   useEffect(() => {
-    if (!profile?.id || permission !== 'granted') return
-    supabase.from('push_subscriptions').select('user_id').eq('user_id', profile.id).maybeSingle()
+    if (!userId || permission !== 'granted') return
+    supabase.from('push_subscriptions').select('user_id').eq('user_id', userId).maybeSingle()
       .then(({ data }) => {
         if (data) setSubStatus('subscribed')
       })
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [profile?.id, permission])
+  }, [userId, permission])
 
   // ── Send real push via Edge Function ──
   async function testPush() {
     if (subStatus !== 'subscribed') {
-      // Try to subscribe first
       const ok = await subscribePush()
       if (!ok) return false
     }
     try {
       const { error } = await supabase.functions.invoke('send-push', {
-        body: { test: true, userId: profile?.id },
+        body: { test: true, userId },
       })
       return !error
     } catch {
-      // Fallback to local notification
       sendLocalNotification('Teste de notificação! 🔥')
       return true
     }
   }
 
-  // ── Local schedule (works while app is open) ──
+  // ── Local schedule ──
   function clearTimers() {
     timersRef.current.forEach(clearTimeout)
     timersRef.current = []
@@ -180,10 +203,9 @@ export function useNotifications() {
 
   function scheduleForToday() {
     clearTimers()
-    const notifEnabled = D?.notifSettings?.enabled
-    if (!notifEnabled || permission !== 'granted') return
-    const times = D?.notifSettings?.times || DEFAULT_TIMES
-    const messages = D?.notifSettings?.messages || DEFAULT_MESSAGES
+    if (!notifSettings.enabled || permission !== 'granted') return
+    const times = notifSettings.times || DEFAULT_TIMES
+    const messages = notifSettings.messages || DEFAULT_MESSAGES
     const now = Date.now()
     times.forEach(time => {
       const [h, m] = time.split(':').map(Number)
@@ -193,7 +215,6 @@ export function useNotifications() {
       if (diff > 0 && diff < 86_400_000) {
         const id = setTimeout(() => {
           const msg = messages[Math.floor(Math.random() * messages.length)]
-          const userId = profile?.id
           if (userId) {
             supabase.functions.invoke('send-push', { body: { userId, body: msg } })
               .catch(() => sendLocalNotification(msg))
@@ -210,34 +231,41 @@ export function useNotifications() {
     scheduleForToday()
     return clearTimers
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [D?.notifSettings?.enabled, JSON.stringify(D?.notifSettings?.times), permission])
+  }, [notifSettings.enabled, JSON.stringify(notifSettings.times), permission])
+
+  // ── Salva notifSettings: localStorage (instantâneo) + Supabase (async) ──
+  function saveNotifSettings(newSettings) {
+    if (!userId) return
+    lsSave(userId, newSettings)  // sempre salva no localStorage primeiro
+    if (D) saveImmediate({ ...D, notifSettings: newSettings })
+  }
 
   function toggleEnabled(val) {
-    if (!D) return
     const utcOffset = -new Date().getTimezoneOffset()
+    const newSettings = { ...notifSettings, enabled: val, utcOffset }
+
     if (val && permission !== 'granted') {
       requestPermission().then(res => {
         if (res === 'granted') {
-          saveImmediate({ ...D, notifSettings: { ...(D.notifSettings || {}), enabled: true, utcOffset } })
+          saveNotifSettings({ ...newSettings, enabled: true })
         }
       })
       return
     }
     if (!val) unsubscribePush()
-    saveImmediate({ ...D, notifSettings: { ...(D.notifSettings || {}), enabled: val, utcOffset } })
+    saveNotifSettings(newSettings)
   }
 
   function setTimes(times) {
-    if (!D) return
-    saveImmediate({ ...D, notifSettings: { ...(D.notifSettings || {}), times, utcOffset: -new Date().getTimezoneOffset() } })
+    saveNotifSettings({ ...notifSettings, times, utcOffset: -new Date().getTimezoneOffset() })
   }
 
   return {
     permission,
     subStatus,
     subError,
-    enabled: D?.notifSettings?.enabled || false,
-    times: D?.notifSettings?.times || DEFAULT_TIMES,
+    enabled: notifSettings.enabled || false,
+    times: notifSettings.times || DEFAULT_TIMES,
     requestPermission,
     subscribePush,
     toggleEnabled,
