@@ -74,23 +74,26 @@ export function useNotifications() {
     setSubStatus('subscribing')
     setSubError('')
 
-    // Trigger native permission dialog IMMEDIATELY (no await before — iOS user gesture requirement)
+    // Fire native dialog IMMEDIATELY — iOS requires no await before this
     const permPromise = (typeof Notification !== 'undefined' && Notification.permission === 'default')
       ? Notification.requestPermission()
       : Promise.resolve(typeof Notification !== 'undefined' ? Notification.permission : 'denied')
 
     try {
-      // Wait for OneSignal init while permission dialog is shown
       await window.__osReady
-
       const nativePerm = await permPromise
+
       if (nativePerm !== 'granted') {
         setSubError('Permissão negada. Habilite nas configurações do celular.')
         setSubStatus('error')
         return false
       }
 
-      // Link device to user in OneSignal
+      // Permission already granted — OneSignal.requestPermission() won't show dialog,
+      // it just registers the device subscription with OneSignal's backend
+      await OneSignal.Notifications.requestPermission()
+
+      // Link device subscription to this user
       await OneSignal.login(userId)
 
       setPermission('granted')
