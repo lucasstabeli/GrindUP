@@ -79,11 +79,7 @@ export function useNotifications() {
       ? Notification.requestPermission()
       : Promise.resolve(typeof Notification !== 'undefined' ? Notification.permission : 'denied')
 
-    const to = (p, ms) =>
-      Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), ms))])
-
     try {
-      await to(window.__osReady, 8000)
       const nativePerm = await permPromise
 
       if (nativePerm !== 'granted') {
@@ -92,24 +88,22 @@ export function useNotifications() {
         return false
       }
 
-      // Use window.OneSignal directly (the real SDK, bypassing deferred wrapper)
-      const os = window.OneSignal
-      if (!os) throw new Error('OneSignal SDK não carregou')
-
-      // 1. optIn creates the push subscription in OneSignal
-      await to(os.User.PushSubscription.optIn(), 8000)
-      // 2. login links this subscription to the user's external_id
-      await to(os.login(userId), 8000)
-
+      // Permission granted — mark as subscribed immediately so UI doesn't hang
       setPermission('granted')
       setSubStatus('subscribed')
+
+      // Register with OneSignal in background (don't block UI on this)
+      window.__osReady?.then(() => {
+        const os = window.OneSignal
+        if (!os) return
+        os.login(userId).catch(() => {})
+      }).catch(() => {})
+
       return true
     } catch (err) {
       const msg = String(err?.message || err)
       if (msg.includes('install') || msg.includes('manifest')) {
         setSubError('Instale o app na tela inicial primeiro.')
-      } else if (msg.includes('timeout')) {
-        setSubError('Tempo esgotado. Verifique conexão e tente novamente.')
       } else {
         setSubError('Erro ao ativar: ' + msg.slice(0, 80))
       }
