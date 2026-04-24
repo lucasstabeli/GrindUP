@@ -78,20 +78,15 @@ export function useNotifications() {
       // 1. Ensure OneSignal SDK is initialized (async, started in main.jsx)
       await window.__osReady
 
-      // 2. Request native permission first — iOS requires this within the user gesture
-      let nativePerm = Notification.permission
-      if (nativePerm === 'default') {
-        nativePerm = await Notification.requestPermission()
-      }
-      if (nativePerm === 'denied') {
+      // 2. Link device to user, then let OneSignal request permission (handles iOS user-gesture internally)
+      await OneSignal.login(userId)
+      const granted = await OneSignal.Notifications.requestPermission()
+
+      if (!granted) {
         setSubError('Permissão negada. Habilite nas configurações do celular.')
         setSubStatus('error')
         return false
       }
-
-      // 3. Link this device to the user in OneSignal and opt in
-      await OneSignal.login(userId)
-      await OneSignal.User?.PushSubscription?.optIn?.()
 
       setPermission('granted')
       setSubStatus('subscribed')
