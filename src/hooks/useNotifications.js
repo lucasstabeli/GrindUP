@@ -76,11 +76,14 @@ export function useNotifications() {
 
     try {
       // 1. Ensure OneSignal SDK is initialized (async, started in main.jsx)
+      console.log('[notif] awaiting __osReady')
       await window.__osReady
+      console.log('[notif] osReady done')
 
-      // 2. Link device to user, then let OneSignal request permission (handles iOS user-gesture internally)
-      await OneSignal.login(userId)
+      // 2. Request permission first (iOS user-gesture requirement), then link user
+      console.log('[notif] requesting permission')
       const granted = await OneSignal.Notifications.requestPermission()
+      console.log('[notif] permission result:', granted)
 
       if (!granted) {
         setSubError('Permissão negada. Habilite nas configurações do celular.')
@@ -88,10 +91,15 @@ export function useNotifications() {
         return false
       }
 
+      console.log('[notif] logging in user', userId)
+      await OneSignal.login(userId)
+      console.log('[notif] login done')
+
       setPermission('granted')
       setSubStatus('subscribed')
       return true
     } catch (err) {
+      console.error('[notif] subscribePush error:', err)
       const msg = String(err?.message || err)
       if (msg.includes('install') || msg.includes('manifest')) {
         setSubError('Instale o app na tela inicial primeiro.')
