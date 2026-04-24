@@ -23,7 +23,7 @@ function urlBase64ToUint8Array(base64String) {
 }
 
 export function useNotifications() {
-  const { D, save } = useGameData()
+  const { D, save, saveImmediate } = useGameData()
   const { profile } = useUserStore()
   const timersRef = useRef([])
 
@@ -218,18 +218,18 @@ export function useNotifications() {
     if (val && permission !== 'granted') {
       requestPermission().then(res => {
         if (res === 'granted') {
-          save({ ...D, notifSettings: { ...(D.notifSettings || {}), enabled: true, utcOffset } })
+          saveImmediate({ ...D, notifSettings: { ...(D.notifSettings || {}), enabled: true, utcOffset } })
         }
       })
       return
     }
     if (!val) unsubscribePush()
-    save({ ...D, notifSettings: { ...(D.notifSettings || {}), enabled: val, utcOffset } })
+    saveImmediate({ ...D, notifSettings: { ...(D.notifSettings || {}), enabled: val, utcOffset } })
   }
 
   function setTimes(times) {
     if (!D) return
-    save({ ...D, notifSettings: { ...(D.notifSettings || {}), times, utcOffset: -new Date().getTimezoneOffset() } })
+    saveImmediate({ ...D, notifSettings: { ...(D.notifSettings || {}), times, utcOffset: -new Date().getTimezoneOffset() } })
   }
 
   return {

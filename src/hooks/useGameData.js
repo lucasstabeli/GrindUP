@@ -105,6 +105,14 @@ export function useGameData() {
     }, 800)
   }
 
+  function saveImmediate(newD) {
+    qc.setQueryData(['game-data', profile?.id], newD)
+    clearTimeout(saveTimer.current)
+    supabase
+      .from('user_game_data')
+      .upsert({ user_id: profile.id, data: newD, updated_at: new Date().toISOString() })
+  }
+
   // Daily auto-reset: run at midnight boundary
   useEffect(() => {
     if (!D || !profile?.id || didReset.current) return
@@ -159,5 +167,5 @@ export function useGameData() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [D?.lastResetDate, profile?.id])
 
-  return { D: D || JSON.parse(JSON.stringify(DEFAULT_GAME)), save, isLoading }
+  return { D: D || JSON.parse(JSON.stringify(DEFAULT_GAME)), save, saveImmediate, isLoading }
 }
