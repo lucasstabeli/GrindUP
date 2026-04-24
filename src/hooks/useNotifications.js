@@ -79,11 +79,11 @@ export function useNotifications() {
       ? Notification.requestPermission()
       : Promise.resolve(typeof Notification !== 'undefined' ? Notification.permission : 'denied')
 
-    const withTimeout = (p, ms, label) =>
-      Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error(`timeout:${label}`)), ms))])
+    const to = (p, ms) =>
+      Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), ms))])
 
     try {
-      await withTimeout(window.__osReady, 6000, 'osReady')
+      await to(window.__osReady, 8000)
       const nativePerm = await permPromise
 
       if (nativePerm !== 'granted') {
@@ -92,8 +92,14 @@ export function useNotifications() {
         return false
       }
 
-      // Link this device to the user in OneSignal
-      await withTimeout(OneSignal.login(userId), 6000, 'login')
+      // Use window.OneSignal directly (the real SDK, bypassing deferred wrapper)
+      const os = window.OneSignal
+      if (!os) throw new Error('OneSignal SDK não carregou')
+
+      // 1. optIn creates the push subscription in OneSignal
+      await to(os.User.PushSubscription.optIn(), 8000)
+      // 2. login links this subscription to the user's external_id
+      await to(os.login(userId), 8000)
 
       setPermission('granted')
       setSubStatus('subscribed')
@@ -103,7 +109,7 @@ export function useNotifications() {
       if (msg.includes('install') || msg.includes('manifest')) {
         setSubError('Instale o app na tela inicial primeiro.')
       } else if (msg.includes('timeout')) {
-        setSubError('Tempo esgotado. Verifique sua conexão e tente novamente.')
+        setSubError('Tempo esgotado. Verifique conexão e tente novamente.')
       } else {
         setSubError('Erro ao ativar: ' + msg.slice(0, 80))
       }
