@@ -1,5 +1,5 @@
 const APP_NAME = 'GrindUP'
-const CACHE_NAME = 'grindupv4'
+const CACHE_NAME = 'grindupv5'
 
 self.addEventListener('install', () => self.skipWaiting())
 
