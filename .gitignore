@@ -33,3 +33,5 @@ original_part2.txt
 
 # Claude Code settings
 .claude/
+
+.vercel

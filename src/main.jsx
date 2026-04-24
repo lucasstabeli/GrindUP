@@ -2,14 +2,23 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
 import { QueryClientProvider } from '@tanstack/react-query'
+import OneSignal from 'react-onesignal'
 import App from './App'
 import { queryClient } from './lib/queryClient'
 import { supabase } from './lib/supabase'
 import { useUserStore } from './stores/useUserStore'
 import './index.css'
 
-// Background cache cleanup: unregister old SWs and clear old caches
-// ONCE per page load, without blocking/reloading. Safe to run every time.
+// Initialize OneSignal
+OneSignal.init({
+  appId: 'aeb9dee6-91d7-4806-b7b5-b01f7851d4b7',
+  serviceWorkerPath: '/sw.js',
+  serviceWorkerParam: { scope: '/' },
+  notifyButton: { enable: false },
+  welcomeNotification: { disable: true },
+}).catch(() => {})
+
+// Background cache cleanup
 ;(async () => {
   try {
     if (sessionStorage.getItem('grindup_cleaned') === '1') return
@@ -17,7 +26,7 @@ import './index.css'
     if ('caches' in window) {
       const keys = await caches.keys()
       await Promise.all(
-        keys.filter(k => k !== 'grindupv4').map(k => caches.delete(k))
+        keys.filter(k => k !== 'grindupv6').map(k => caches.delete(k))
       )
     }
   } catch {}

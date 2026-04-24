@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
+import OneSignal from 'react-onesignal'
 import { useGameData } from './useGameData'
 import { supabase } from '../lib/supabase'
 import { useUserStore } from '../stores/useUserStore'
 
 const APP_NAME = 'GrindUP'
-const VAPID_PUBLIC_KEY = import.meta.env.VITE_VAPID_PUBLIC_KEY
 
 const DEFAULT_TIMES = ['07:30', '20:00']
 const DEFAULT_MESSAGES = [
@@ -14,13 +14,6 @@ const DEFAULT_MESSAGES = [
   'Missões te esperando. Vai! 💥',
   'Hora de focar. Você consegue! 🏆',
 ]
-
-function urlBase64ToUint8Array(base64String) {
-  const padding = '='.repeat((4 - (base64String.length % 4)) % 4)
-  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/')
-  const rawData = atob(base64)
-  return new Uint8Array([...rawData].map(c => c.charCodeAt(0)))
-}
 
 // ── localStorage helpers ──
 function lsKey(userId) { return `grindupNotif_${userId}` }
@@ -35,6 +28,7 @@ export function useNotifications() {
   const { D, saveImmediate } = useGameData()
   const { profile } = useUserStore()
   const timersRef = useRef([])
+  const userId = profile?.id
 
   const [permission, setPermission] = useState(() => {
     try { return Notification.permission } catch { return 'denied' }
@@ -42,79 +36,59 @@ export function useNotifications() {
   const [subStatus, setSubStatus] = useState('idle')
   const [subError, setSubError] = useState('')
 
-  // ── Lê notifSettings: localStorage tem prioridade sobre Supabase ──
-  const userId = profile?.id
+  // ── notifSettings: localStorage tem prioridade ──
   const lsNotif = userId ? lsGet(userId) : null
-  const dbNotif = D?.notifSettings || {}
-  const notifSettings = lsNotif || dbNotif
+  const notifSettings = lsNotif || D?.notifSettings || {}
 
-  // Ao montar: se localStorage tem dados diferentes do banco, sincroniza pro banco
+  // Ao montar: sincroniza localStorage → Supabase se diferente
   useEffect(() => {
     if (!D || !userId || !lsNotif) return
-    const dbStr = JSON.stringify(dbNotif)
-    const lsStr = JSON.stringify(lsNotif)
-    if (dbStr !== lsStr) {
+    if (JSON.stringify(D?.notifSettings) !== JSON.stringify(lsNotif)) {
       saveImmediate({ ...D, notifSettings: lsNotif })
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId, !!D])
 
-  // ── Subscribe to Web Push ──
+  // ── Verifica status OneSignal ao montar ──
+  useEffect(() => {
+    if (!userId) return
+    const check = async () => {
+      try {
+        await OneSignal.login(userId)
+        const optedIn = OneSignal.User?.PushSubscription?.optedIn
+        if (optedIn) setSubStatus('subscribed')
+        const perm = await OneSignal.Notifications?.permissionNative
+        if (perm === 'granted') setPermission('granted')
+        else if (perm === 'denied') setPermission('denied')
+      } catch {}
+    }
+    check()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId])
+
+  // ── Subscribe via OneSignal ──
   async function subscribePush() {
-    if (!('serviceWorker' in navigator)) {
-      setSubError('Service Worker não suportado neste browser.')
-      setSubStatus('error')
-      return false
-    }
-    if (!('PushManager' in window)) {
-      setSubError('Push não suportado. No iPhone: instale o app e use o Safari.')
-      setSubStatus('error')
-      return false
-    }
-    if (!VAPID_PUBLIC_KEY) {
-      setSubError('Chave VAPID não configurada.')
-      setSubStatus('error')
-      return false
-    }
-    if (!userId) {
-      setSubError('Faça login primeiro.')
-      setSubStatus('error')
-      return false
-    }
+    if (!userId) { setSubError('Faça login primeiro.'); setSubStatus('error'); return false }
 
     setSubStatus('subscribing')
     setSubError('')
 
     try {
-      const reg = await navigator.serviceWorker.ready
-      let sub = await reg.pushManager.getSubscription()
+      await OneSignal.login(userId)
+      const granted = await OneSignal.Notifications.requestPermission()
 
-      if (!sub) {
-        sub = await reg.pushManager.subscribe({
-          userVisibleOnly: true,
-          applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
-        })
+      if (!granted) {
+        setSubError('Permissão negada. Habilite nas configurações do celular.')
+        setSubStatus('error')
+        return false
       }
 
-      const subJson = sub.toJSON()
-      const { error } = await supabase.from('push_subscriptions').upsert({
-        user_id: userId,
-        endpoint: subJson.endpoint,
-        p256dh: subJson.keys?.p256dh,
-        auth: subJson.keys?.auth,
-        updated_at: new Date().toISOString(),
-      }, { onConflict: 'user_id' })
-
-      if (error) throw error
-
+      setPermission('granted')
       setSubStatus('subscribed')
       return true
     } catch (err) {
-      console.error('subscribePush error:', err)
-      const msg = err?.message || String(err)
-      if (msg.includes('permission') || msg.includes('denied')) {
-        setSubError('Permissão negada. Habilite nas configurações do celular.')
-      } else if (msg.includes('install') || msg.includes('manifest')) {
+      const msg = String(err?.message || err)
+      if (msg.includes('install') || msg.includes('manifest')) {
         setSubError('Instale o app na tela inicial primeiro.')
       } else {
         setSubError('Erro ao ativar: ' + msg.slice(0, 80))
@@ -126,46 +100,16 @@ export function useNotifications() {
 
   async function unsubscribePush() {
     try {
-      if ('serviceWorker' in navigator) {
-        const reg = await navigator.serviceWorker.ready
-        const sub = await reg.pushManager.getSubscription()
-        if (sub) await sub.unsubscribe()
-      }
-      if (userId) {
-        await supabase.from('push_subscriptions').delete().eq('user_id', userId)
-      }
+      await OneSignal.User?.PushSubscription?.optOut()
       setSubStatus('idle')
     } catch {}
   }
 
-  // ── Request permission ──
   async function requestPermission() {
-    try {
-      const res = await Notification.requestPermission()
-      setPermission(res)
-      if (res === 'granted') {
-        await subscribePush()
-      } else {
-        setSubError('Permissão negada. Vá em Configurações do celular e habilite notificações para este site.')
-        setSubStatus('error')
-      }
-      return res
-    } catch {
-      return 'denied'
-    }
+    return subscribePush() ? 'granted' : 'denied'
   }
 
-  // Check if already subscribed on mount
-  useEffect(() => {
-    if (!userId || permission !== 'granted') return
-    supabase.from('push_subscriptions').select('user_id').eq('user_id', userId).maybeSingle()
-      .then(({ data }) => {
-        if (data) setSubStatus('subscribed')
-      })
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId, permission])
-
-  // ── Send real push via Edge Function ──
+  // ── Test push via Edge Function ──
   async function testPush() {
     if (subStatus !== 'subscribed') {
       const ok = await subscribePush()
@@ -177,28 +121,28 @@ export function useNotifications() {
       })
       return !error
     } catch {
-      sendLocalNotification('Teste de notificação! 🔥')
-      return true
+      return false
     }
   }
 
-  // ── Local schedule ──
+  // ── Local schedule (app em background) ──
   function clearTimers() {
     timersRef.current.forEach(clearTimeout)
     timersRef.current = []
   }
 
   function sendLocalNotification(body) {
-    const opts = {
-      body,
-      icon: '/icons/icon-192.png',
-      badge: '/icons/icon-32.png',
-      vibrate: [100, 50, 100],
-      tag: 'grindupreminder',
-    }
-    navigator.serviceWorker?.ready
-      .then(reg => reg.showNotification(APP_NAME, opts))
-      .catch(() => { try { new Notification(APP_NAME, opts) } catch {} })
+    try {
+      navigator.serviceWorker?.ready
+        .then(reg => reg.showNotification(APP_NAME, {
+          body,
+          icon: '/icons/icon-192.png',
+          badge: '/icons/icon-32.png',
+          vibrate: [100, 50, 100],
+          tag: 'grindupreminder',
+        }))
+        .catch(() => { try { new Notification(APP_NAME, { body }) } catch {} })
+    } catch {}
   }
 
   function scheduleForToday() {
@@ -233,10 +177,10 @@ export function useNotifications() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [notifSettings.enabled, JSON.stringify(notifSettings.times), permission])
 
-  // ── Salva notifSettings: localStorage (instantâneo) + Supabase (async) ──
+  // ── Salva: localStorage (instantâneo) + Supabase (sync) ──
   function saveNotifSettings(newSettings) {
     if (!userId) return
-    lsSave(userId, newSettings)  // sempre salva no localStorage primeiro
+    lsSave(userId, newSettings)
     if (D) saveImmediate({ ...D, notifSettings: newSettings })
   }
 
@@ -245,10 +189,8 @@ export function useNotifications() {
     const newSettings = { ...notifSettings, enabled: val, utcOffset }
 
     if (val && permission !== 'granted') {
-      requestPermission().then(res => {
-        if (res === 'granted') {
-          saveNotifSettings({ ...newSettings, enabled: true })
-        }
+      subscribePush().then(ok => {
+        if (ok) saveNotifSettings({ ...newSettings, enabled: true })
       })
       return
     }

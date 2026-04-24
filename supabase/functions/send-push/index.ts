@@ -1,13 +1,9 @@
 import { createClient } from 'npm:@supabase/supabase-js@2'
-import webPush from 'npm:web-push@3'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-const VAPID_PUBLIC_KEY = Deno.env.get('VAPID_PUBLIC_KEY')!
-const VAPID_PRIVATE_KEY = Deno.env.get('VAPID_PRIVATE_KEY')!
-const VAPID_EMAIL = Deno.env.get('VAPID_EMAIL') || 'mailto:admin@grindupapp.com'
-
-webPush.setVapidDetails(VAPID_EMAIL, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY)
+const ONESIGNAL_APP_ID = Deno.env.get('ONESIGNAL_APP_ID')!
+const ONESIGNAL_REST_API_KEY = Deno.env.get('ONESIGNAL_REST_API_KEY')!
 
 const DEFAULT_MESSAGES = [
   'Bora treinar! Não perde o streak. 🔥',
@@ -34,25 +30,34 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ error: 'userId required' }), { status: 400 })
     }
 
-    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY)
-    const { data: sub, error } = await supabase
-      .from('push_subscriptions')
-      .select('endpoint, p256dh, auth')
-      .eq('user_id', userId)
-      .single()
-
-    if (error || !sub) {
-      return new Response(JSON.stringify({ error: 'No subscription found' }), { status: 404 })
-    }
-
     const message = customBody || (test
       ? '🔔 Notificação de teste GrindUP!'
       : DEFAULT_MESSAGES[Math.floor(Math.random() * DEFAULT_MESSAGES.length)])
 
-    await webPush.sendNotification(
-      { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
-      JSON.stringify({ title: 'GrindUP', body: message, url: '/' }),
-    )
+    const res = await fetch('https://api.onesignal.com/notifications', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Key ${ONESIGNAL_REST_API_KEY}`,
+        'Content-Type': 'application/json',
+        'accept': 'application/json',
+      },
+      body: JSON.stringify({
+        app_id: ONESIGNAL_APP_ID,
+        include_aliases: { external_id: [userId] },
+        target_channel: 'push',
+        headings: { en: 'GrindUP' },
+        contents: { en: message },
+        url: '/',
+        chrome_web_icon: '/icons/icon-192.png',
+      }),
+    })
+
+    const data = await res.json()
+
+    if (!res.ok) {
+      console.error('OneSignal error:', data)
+      return new Response(JSON.stringify({ error: data }), { status: 500 })
+    }
 
     return new Response(JSON.stringify({ ok: true }), {
       headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
