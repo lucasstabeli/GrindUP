@@ -79,8 +79,11 @@ export function useNotifications() {
       ? Notification.requestPermission()
       : Promise.resolve(typeof Notification !== 'undefined' ? Notification.permission : 'denied')
 
+    const withTimeout = (p, ms, label) =>
+      Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error(`timeout:${label}`)), ms))])
+
     try {
-      await window.__osReady
+      await withTimeout(window.__osReady, 6000, 'osReady')
       const nativePerm = await permPromise
 
       if (nativePerm !== 'granted') {
@@ -89,12 +92,8 @@ export function useNotifications() {
         return false
       }
 
-      // Permission already granted — OneSignal.requestPermission() won't show dialog,
-      // it just registers the device subscription with OneSignal's backend
-      await OneSignal.Notifications.requestPermission()
-
-      // Link device subscription to this user
-      await OneSignal.login(userId)
+      // Link this device to the user in OneSignal
+      await withTimeout(OneSignal.login(userId), 6000, 'login')
 
       setPermission('granted')
       setSubStatus('subscribed')
@@ -103,6 +102,8 @@ export function useNotifications() {
       const msg = String(err?.message || err)
       if (msg.includes('install') || msg.includes('manifest')) {
         setSubError('Instale o app na tela inicial primeiro.')
+      } else if (msg.includes('timeout')) {
+        setSubError('Tempo esgotado. Verifique sua conexão e tente novamente.')
       } else {
         setSubError('Erro ao ativar: ' + msg.slice(0, 80))
       }
