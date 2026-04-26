@@ -9,14 +9,40 @@ import { supabase } from './lib/supabase'
 import { useUserStore } from './stores/useUserStore'
 import './index.css'
 
-// Initialize OneSignal — guarda a promise para aguardar antes de usar
-window.__osReady = OneSignal.init({
+// Registra o SW manualmente ANTES do OneSignal — garante que existe.
+// O OneSignal v16 às vezes falha silenciosamente em registrar e não temos como saber.
+window.__swReady = (async () => {
+  if (!('serviceWorker' in navigator)) return null
+  try {
+    const reg = await navigator.serviceWorker.register('/sw.js', { scope: '/' })
+    console.log('[SW] registrado:', reg.scope, reg.active?.scriptURL || reg.installing?.scriptURL)
+    // Espera ativar
+    if (reg.installing) {
+      await new Promise(resolve => {
+        reg.installing.addEventListener('statechange', e => {
+          if (e.target.state === 'activated') resolve()
+        })
+      })
+    }
+    return reg
+  } catch (err) {
+    console.error('[SW] FALHOU AO REGISTRAR:', err)
+    return null
+  }
+})()
+
+// Inicializa OneSignal DEPOIS do SW estar registrado
+window.__osReady = window.__swReady.then(() => OneSignal.init({
   appId: 'aeb9dee6-91d7-4806-b7b5-b01f7851d4b7',
   serviceWorkerPath: '/sw.js',
   serviceWorkerParam: { scope: '/' },
   notifyButton: { enable: false },
   welcomeNotification: { disable: true },
-}).catch(() => {})
+})).then(() => {
+  console.log('[OneSignal] init OK')
+}).catch(err => {
+  console.error('[OneSignal] init FALHOU:', err)
+})
 
 // Background cache cleanup
 ;(async () => {
@@ -26,7 +52,7 @@ window.__osReady = OneSignal.init({
     if ('caches' in window) {
       const keys = await caches.keys()
       await Promise.all(
-        keys.filter(k => k !== 'grindupv13').map(k => caches.delete(k))
+        keys.filter(k => k !== 'grindupv14').map(k => caches.delete(k))
       )
     }
   } catch {}

@@ -402,16 +402,22 @@ export function useNotifications() {
 
     // Verdade absoluta: vai direto no browser, sem OneSignal
     let browserSubscription = null
-    let swState = null
-    let swScope = null
-    let swScriptURL = null
+    let swCount = 0
+    let swList = []
+    let controllerScript = null
     let swError = null
     try {
-      const reg = await navigator.serviceWorker?.getRegistration()
+      const allRegs = await navigator.serviceWorker?.getRegistrations()
+      swCount = allRegs?.length || 0
+      swList = (allRegs || []).map(r => ({
+        scope: r.scope,
+        scriptURL: r.active?.scriptURL || r.installing?.scriptURL || r.waiting?.scriptURL || null,
+        state: r.active?.state || r.installing?.state || r.waiting?.state || 'unknown',
+      }))
+      controllerScript = navigator.serviceWorker?.controller?.scriptURL || null
+      // Tenta pegar subscription do primeiro SW
+      const reg = allRegs?.[0]
       if (reg) {
-        swState = reg.active?.state || reg.installing?.state || reg.waiting?.state || 'unknown'
-        swScope = reg.scope
-        swScriptURL = reg.active?.scriptURL || reg.installing?.scriptURL || null
         const browserSub = await reg.pushManager?.getSubscription()
         if (browserSub) {
           browserSubscription = {
@@ -436,9 +442,9 @@ export function useNotifications() {
       browserSubscription,
       browserPermission: typeof Notification !== 'undefined' ? Notification.permission : 'n/a',
       // Service Worker
-      swState,
-      swScope,
-      swScriptURL,
+      swCount,
+      swList,
+      controllerScript,
       swError,
       // PWA / Device
       isStandalone: window.matchMedia?.('(display-mode: standalone)').matches || window.navigator?.standalone === true,

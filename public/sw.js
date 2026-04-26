@@ -1,7 +1,7 @@
 importScripts('https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.sw.js')
 
 const APP_NAME = 'GrindUP'
-const CACHE_NAME = 'grindupv13'
+const CACHE_NAME = 'grindupv14'
 
 self.addEventListener('install', () => self.skipWaiting())
 
