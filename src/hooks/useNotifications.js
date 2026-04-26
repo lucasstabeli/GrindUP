@@ -102,19 +102,19 @@ export function useNotifications() {
         return false
       }
 
-      // Permission granted — register with OneSignal
+      // Permission granted — register with OneSignal (each call has 4s timeout)
+      const t = (fn) => Promise.race([fn().catch(() => {}), new Promise(r => setTimeout(r, 4000))])
       try { await window.__osReady } catch {}
-      try { await OneSignal.login(userId) } catch {}
-      try { await OneSignal.Notifications.requestPermission() } catch {}
-      try { await OneSignal.User?.PushSubscription?.optIn() } catch {}
+      await t(() => OneSignal.login(userId))
+      await t(() => OneSignal.Notifications.requestPermission())
+      await t(() => OneSignal.User?.PushSubscription?.optIn?.())
 
       setPermission('granted')
 
-      // Poll optedIn for up to 15s — iOS APNS registration can be slow
+      // Poll optedIn for up to 12s — iOS APNS registration can be slow
       let optedIn = false
-      for (let i = 0; i < 15; i++) {
+      for (let i = 0; i < 12; i++) {
         await new Promise(r => setTimeout(r, 1000))
-        try { await OneSignal.login(userId) } catch {}
         optedIn = OneSignal.User?.PushSubscription?.optedIn ?? false
         if (optedIn) break
       }
