@@ -130,24 +130,17 @@ export function useNotifications() {
       if (!ok) return false
     }
     try {
-      const { data, error } = await supabase.functions.invoke('send-push', {
-        body: { test: true, userId },
+      const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/send-push`
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY },
+        body: JSON.stringify({ test: true, userId }),
       })
-      if (error) {
-        let detail = error.message || 'erro desconhecido'
-        try {
-          if (typeof error.context?.text === 'function') {
-            detail = await error.context.text()
-          } else if (typeof error.context?.json === 'function') {
-            detail = JSON.stringify(await error.context.json())
-          }
-        } catch {}
-        return `Erro: ${String(detail).slice(0, 200)}`
-      }
-      if (data?.error) return `OS: ${JSON.stringify(data.error).slice(0, 150)}`
+      const text = await res.text()
+      if (!res.ok) return `HTTP ${res.status}: ${text.slice(0, 200)}`
       return true
     } catch (e) {
-      return `Exceção: ${String(e).slice(0, 80)}`
+      return `Fetch error: ${String(e).slice(0, 100)}`
     }
   }
 
