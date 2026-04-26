@@ -328,16 +328,27 @@ export default function TopBar({ title, onAdmin, isAdmin }) {
               <button onClick={() => { setShowNotif(false); setTestResult('') }} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: '1.4rem', cursor: 'pointer', lineHeight: 1 }}>×</button>
             </div>
 
-            {/* iOS install guide — always visible on iPhone */}
-            {/iphone|ipad|ipod/i.test(navigator.userAgent) && (
-              <div style={{ background: 'rgba(59,130,246,0.08)', border: '1px solid rgba(59,130,246,0.25)', borderRadius: 10, padding: '12px 14px', marginBottom: 16, fontSize: '0.82rem', color: '#3b82f6' }}>
-                <div style={{ fontWeight: 800, marginBottom: 4 }}>📱 iPhone — obrigatório para funcionar</div>
-                1. Abra no <strong>Safari</strong> (não Chrome, não outro app)<br />
-                2. Toque em <strong>Compartilhar</strong> → "<strong>Adicionar à Tela de Início</strong>"<br />
-                3. Abra o GrindUP pelo <strong>ícone instalado</strong><br />
-                4. Ative as notificações aqui dentro
-              </div>
-            )}
+            {/* iOS install guide */}
+            {(() => {
+              const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent)
+              const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true
+              if (!isIOS) return null
+              if (isStandalone) return (
+                <div style={{ background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.25)', borderRadius: 10, padding: '10px 14px', marginBottom: 16, fontSize: '0.82rem', color: '#22c55e' }}>
+                  Abrindo pelo app instalado. Pode ativar as notificações abaixo.
+                </div>
+              )
+              return (
+                <div style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.35)', borderRadius: 10, padding: '12px 14px', marginBottom: 16, fontSize: '0.82rem', color: '#ef4444' }}>
+                  <div style={{ fontWeight: 800, marginBottom: 6 }}>iPhone: abra pelo ícone instalado</div>
+                  Você está no Safari. Push no iPhone só funciona via app instalado:<br /><br />
+                  1. No <strong>Safari</strong>, toque em <strong>Compartilhar</strong> (quadrado com seta)<br />
+                  2. Toque em "<strong>Adicionar à Tela de Início</strong>"<br />
+                  3. Abra o GrindUP pelo ícone na Tela de Início<br />
+                  4. Volte aqui e ative as notificações
+                </div>
+              )
+            })()}
 
             {/* Status badge */}
             <div style={{
