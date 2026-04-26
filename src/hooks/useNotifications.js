@@ -85,15 +85,6 @@ export function useNotifications() {
   async function subscribePush() {
     if (!userId) { setSubError('Faça login primeiro.'); setSubStatus('error'); return false }
 
-    const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent)
-    const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true
-
-    if (isIOS && !isStandalone) {
-      setSubError('No iPhone, abra o GrindUP pelo ícone instalado na Tela de Início. No Safari não funciona.')
-      setSubStatus('error')
-      return false
-    }
-
     setSubStatus('subscribing')
     setSubError('')
 
