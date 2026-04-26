@@ -59,8 +59,8 @@ export function useNotifications() {
       // Se já existe subscription com APNS válido (id presente), faz login (re-aliasa).
       try {
         const sub = OneSignal.User?.PushSubscription
-        // optedIn sem id = estado fantasma (token APNS perdido). Não marca como subscribed.
-        if (sub?.optedIn && sub?.id) {
+        // optedIn sem id/token = estado fantasma. Não marca como subscribed.
+        if (sub?.optedIn && sub?.id && sub?.token) {
           try { await OneSignal.login(userId) } catch {}
           setSubStatus('subscribed')
         }
@@ -122,9 +122,11 @@ export function useNotifications() {
       // Se já está inscrito (e não forçou refresh), só confirma
       if (!forceFresh && sub?.optedIn) {
         const id = sub.id
-        console.log('[push] já inscrito, subscription_id:', id)
-        if (!id) {
-          // optedIn=true mas sem ID = estado fantasma. Força refresh.
+        const token = sub.token
+        console.log('[push] já inscrito, subscription_id:', id, 'token:', token ? 'presente' : 'NULL')
+        if (!id || !token) {
+          // optedIn=true mas sem ID/token = estado fantasma (config OneSignal incompleta).
+          // Força refresh; se ainda assim vier null, é problema de config no dashboard.
           return subscribePush(true)
         }
         setPermission('granted')
@@ -144,13 +146,16 @@ export function useNotifications() {
         const handler = (event) => {
           const opted = event?.current?.optedIn ?? sub?.optedIn
           const id = event?.current?.id ?? sub?.id
-          if (opted && id) finish(true)
+          const token = event?.current?.token ?? sub?.token
+          // Só consideramos "inscrito de verdade" se TIVER token — sem token a Apple não recebe nada.
+          if (opted && id && token) finish(true)
         }
         try { sub?.addEventListener?.('change', handler) } catch {}
         setTimeout(() => {
           const opted = sub?.optedIn === true
           const id = sub?.id
-          finish(opted && !!id)
+          const token = sub?.token
+          finish(opted && !!id && !!token)
         }, 30000)
       })
 
@@ -183,10 +188,15 @@ export function useNotifications() {
       const ok = await subscribed
 
       if (!ok) {
-        const detail = sub?.id ? '' : ' (sem subscription_id)'
-        setSubError(isIOS
-          ? `Falha no registro com a Apple${detail}. Force-fechar o app, abra pelo ícone e tente de novo. Se persistir, desinstale e instale de novo.`
-          : `Dispositivo não registrado${detail}. Tente novamente.`)
+        const hasId = !!sub?.id
+        const hasToken = !!sub?.token
+        let detail = ''
+        if (hasId && !hasToken) {
+          detail = ' — Token vazio: a config Web do OneSignal está incompleta. Vá no dashboard > Settings > Push & In-App > Web e confirme o Site URL.'
+        } else if (!hasId) {
+          detail = ' — Subscription nem foi criada. Verifique conexão e config do OneSignal.'
+        }
+        setSubError(`Falha no registro${detail}`)
         setSubStatus('error')
         return false
       }
