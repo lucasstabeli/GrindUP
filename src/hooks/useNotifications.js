@@ -134,10 +134,15 @@ export function useNotifications() {
         body: { test: true, userId },
       })
       if (error) {
-        // Extract actual body from FunctionsFetchError context
-        let detail = error?.context?.body || error?.message || JSON.stringify(error)
-        if (typeof detail === 'object') detail = JSON.stringify(detail)
-        return `Erro: ${String(detail).slice(0, 150)}`
+        let detail = error.message || 'erro desconhecido'
+        try {
+          if (typeof error.context?.text === 'function') {
+            detail = await error.context.text()
+          } else if (typeof error.context?.json === 'function') {
+            detail = JSON.stringify(await error.context.json())
+          }
+        } catch {}
+        return `Erro: ${String(detail).slice(0, 200)}`
       }
       if (data?.error) return `OS: ${JSON.stringify(data.error).slice(0, 150)}`
       return true
