@@ -428,7 +428,7 @@ export default function TopBar({ title, onAdmin, isAdmin }) {
                 setTestingPush(true)
                 setTestResult('')
                 const ok = await testPush()
-                setTestResult(ok ? 'ok' : 'Falhou. Verifique se o push está ativado.')
+                setTestResult(ok === true ? 'ok' : typeof ok === 'string' ? ok : 'Falhou.')
                 setTestingPush(false)
               }}
               disabled={testingPush}

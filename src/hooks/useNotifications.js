@@ -130,12 +130,14 @@ export function useNotifications() {
       if (!ok) return false
     }
     try {
-      const { error } = await supabase.functions.invoke('send-push', {
+      const { data, error } = await supabase.functions.invoke('send-push', {
         body: { test: true, userId },
       })
-      return !error
-    } catch {
-      return false
+      if (error) return `Erro: ${JSON.stringify(error).slice(0, 120)}`
+      if (data?.error) return `OneSignal: ${JSON.stringify(data.error).slice(0, 120)}`
+      return true
+    } catch (e) {
+      return `Exceção: ${String(e).slice(0, 80)}`
     }
   }
 
