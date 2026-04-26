@@ -39,6 +39,7 @@ export default function TopBar({ title, onAdmin, isAdmin }) {
   const [testingPush, setTestingPush] = useState(false)
   const [testResult, setTestResult] = useState('')
   const [showDiag, setShowDiag] = useState(false)
+  const [diagData, setDiagData] = useState(null)
   const [countdown, setCountdown] = useState(0)
 
   useEffect(() => {
@@ -46,6 +47,13 @@ export default function TopBar({ title, onAdmin, isAdmin }) {
     const id = setInterval(() => setCountdown(v => v - 1), 1000)
     return () => clearInterval(id)
   }, [countdown])
+
+  useEffect(() => {
+    if (!showDiag) return
+    let active = true
+    getDiagnostics().then(d => { if (active) setDiagData(d) }).catch(() => {})
+    return () => { active = false }
+  }, [showDiag, getDiagnostics])
 
   const [showTheme, setShowTheme] = useState(false)
   const [showNotif, setShowNotif] = useState(false)
@@ -530,7 +538,7 @@ export default function TopBar({ title, onAdmin, isAdmin }) {
                 background: 'var(--surface-2)', border: '1px solid var(--line)',
                 borderRadius: 8, padding: 10, fontSize: '0.7rem', color: 'var(--muted)',
                 overflow: 'auto', maxHeight: 240, marginTop: 4, whiteSpace: 'pre-wrap', wordBreak: 'break-all',
-              }}>{JSON.stringify(getDiagnostics(), null, 2)}</pre>
+              }}>{diagData ? JSON.stringify(diagData, null, 2) : 'Carregando diagnóstico...'}</pre>
             )}
           </div>
         </div>

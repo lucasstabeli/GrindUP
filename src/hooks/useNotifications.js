@@ -394,22 +394,59 @@ export function useNotifications() {
   }
 
   // ── Diagnóstico: dados pra debug ──
-  function getDiagnostics() {
+  async function getDiagnostics() {
     const sub = OneSignal.User?.PushSubscription
     const ua = navigator.userAgent
     const iosMatch = ua.match(/OS (\d+)_(\d+)/)
     const iosVersion = iosMatch ? `${iosMatch[1]}.${iosMatch[2]}` : null
+
+    // Verdade absoluta: vai direto no browser, sem OneSignal
+    let browserSubscription = null
+    let swState = null
+    let swScope = null
+    let swScriptURL = null
+    let swError = null
+    try {
+      const reg = await navigator.serviceWorker?.getRegistration()
+      if (reg) {
+        swState = reg.active?.state || reg.installing?.state || reg.waiting?.state || 'unknown'
+        swScope = reg.scope
+        swScriptURL = reg.active?.scriptURL || reg.installing?.scriptURL || null
+        const browserSub = await reg.pushManager?.getSubscription()
+        if (browserSub) {
+          browserSubscription = {
+            endpoint: browserSub.endpoint?.slice(0, 60) + '...',
+            hasKeys: !!browserSub.toJSON?.()?.keys,
+            expirationTime: browserSub.expirationTime,
+          }
+        }
+      }
+    } catch (e) {
+      swError = String(e?.message || e).slice(0, 100)
+    }
+
     return {
+      // OneSignal SDK
       subscriptionId: sub?.id || null,
-      subscriptionToken: sub?.token ? sub.token.slice(0, 20) + '...' : null,
+      subscriptionToken: sub?.token ? sub.token.slice(0, 30) + '...' : null,
       optedIn: sub?.optedIn ?? null,
       onesignalId: OneSignal.User?.onesignalId || null,
       externalId: OneSignal.User?.externalId || null,
+      // Browser-level (verdade absoluta)
+      browserSubscription,
       browserPermission: typeof Notification !== 'undefined' ? Notification.permission : 'n/a',
+      // Service Worker
+      swState,
+      swScope,
+      swScriptURL,
+      swError,
+      // PWA / Device
       isStandalone: window.matchMedia?.('(display-mode: standalone)').matches || window.navigator?.standalone === true,
       isIOS: /iphone|ipad|ipod/i.test(ua),
       iosVersion,
       hasServiceWorker: 'serviceWorker' in navigator,
+      currentURL: window.location.href,
+      origin: window.location.origin,
       userId,
     }
   }
