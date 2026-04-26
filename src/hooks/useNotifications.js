@@ -88,16 +88,20 @@ export function useNotifications() {
         return false
       }
 
-      // Permission granted — mark as subscribed immediately so UI doesn't hang
+      // Permission granted — try OneSignal registration with 5s timeout
+      // If it hangs, we still mark subscribed so UI doesn't freeze
+      const osTimeout = new Promise(r => setTimeout(r, 5000))
+      const osRegister = (async () => {
+        await window.__osReady
+        const os = window.OneSignal
+        if (!os) return
+        try { await os.Notifications.requestPermission() } catch {}
+        try { await os.login(userId) } catch {}
+      })()
+      await Promise.race([osRegister, osTimeout])
+
       setPermission('granted')
       setSubStatus('subscribed')
-
-      // Register with OneSignal in background via deferred queue (don't block UI)
-      window.__osReady?.then(() => {
-        window.OneSignalDeferred?.push?.((os) => {
-          os.login(userId).catch(() => {})
-        })
-      }).catch(() => {})
 
       return true
     } catch (err) {
