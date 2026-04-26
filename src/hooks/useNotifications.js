@@ -53,15 +53,27 @@ export function useNotifications() {
   useEffect(() => {
     if (!userId) return
     const check = async () => {
+      try { await window.__osReady } catch {}
+      // login() falha com ye.Qe se não há subscription ainda — ignora o erro
+      try { await OneSignal.login(userId) } catch {}
+      // Verifica subscription independentemente do login
       try {
-        await window.__osReady
-        await OneSignal.login(userId)
         const optedIn = OneSignal.User?.PushSubscription?.optedIn
         if (optedIn) setSubStatus('subscribed')
+      } catch {}
+      try {
         const perm = Notification.permission
         if (perm === 'granted') setPermission('granted')
         else if (perm === 'denied') setPermission('denied')
       } catch {}
+      // iOS: subscription pode demorar a aparecer após reload do SW — tenta de novo em 3s
+      setTimeout(async () => {
+        try { await OneSignal.login(userId) } catch {}
+        try {
+          const optedIn = OneSignal.User?.PushSubscription?.optedIn
+          if (optedIn) setSubStatus('subscribed')
+        } catch {}
+      }, 3000)
     }
     check()
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -207,8 +219,15 @@ export function useNotifications() {
     const newSettings = { ...notifSettings, enabled: val, utcOffset }
 
     if (val && permission !== 'granted') {
+      // Salva no localStorage ANTES do async — iOS pode recarregar a página ao registrar SW
+      if (userId) lsSave(userId, { ...newSettings, enabled: true })
       subscribePush().then(ok => {
-        if (ok) saveNotifSettings({ ...newSettings, enabled: true })
+        if (ok) {
+          saveNotifSettings({ ...newSettings, enabled: true })
+        } else {
+          // Reverte se falhou
+          if (userId) lsSave(userId, { ...notifSettings, enabled: false })
+        }
       })
       return
     }
