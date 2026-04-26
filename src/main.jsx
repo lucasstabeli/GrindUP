@@ -26,7 +26,7 @@ window.__osReady = OneSignal.init({
     if ('caches' in window) {
       const keys = await caches.keys()
       await Promise.all(
-        keys.filter(k => k !== 'grindupv6').map(k => caches.delete(k))
+        keys.filter(k => k !== 'grindupv11').map(k => caches.delete(k))
       )
     }
   } catch {}

@@ -49,94 +49,157 @@ export function useNotifications() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId, !!D])
 
-  // ── Verifica status OneSignal ao montar ──
+  // ── Verifica status OneSignal ao montar e escuta mudanças ──
   useEffect(() => {
     if (!userId) return
+    let cleanup = () => {}
     const check = async () => {
       try { await window.__osReady } catch {}
-      // login() falha com ye.Qe se não há subscription ainda — ignora o erro
-      try { await OneSignal.login(userId) } catch {}
-      // Verifica subscription independentemente do login
+
+      // Se já existe subscription com APNS válido (id presente), faz login (re-aliasa).
       try {
-        const optedIn = OneSignal.User?.PushSubscription?.optedIn
-        if (optedIn) setSubStatus('subscribed')
+        const sub = OneSignal.User?.PushSubscription
+        // optedIn sem id = estado fantasma (token APNS perdido). Não marca como subscribed.
+        if (sub?.optedIn && sub?.id) {
+          try { await OneSignal.login(userId) } catch {}
+          setSubStatus('subscribed')
+        }
+
+        // Listener pra refletir qualquer mudança futura (subscribe/unsubscribe via outro device, etc)
+        const handler = (event) => {
+          const opted = event?.current?.optedIn ?? sub?.optedIn
+          if (opted) {
+            setSubStatus('subscribed')
+            // Re-aliasa quando a subscription nascer
+            OneSignal.login(userId).catch(() => {})
+          } else {
+            setSubStatus(prev => prev === 'subscribed' ? 'idle' : prev)
+          }
+        }
+        sub?.addEventListener?.('change', handler)
+        cleanup = () => { try { sub?.removeEventListener?.('change', handler) } catch {} }
       } catch {}
+
       try {
         const perm = Notification.permission
         if (perm === 'granted') setPermission('granted')
         else if (perm === 'denied') setPermission('denied')
       } catch {}
-      // iOS: subscription pode demorar a aparecer após reload do SW — tenta de novo em 3s e 8s
-      for (const delay of [3000, 8000]) {
-        setTimeout(async () => {
-          try { await OneSignal.login(userId) } catch {}
-          try {
-            const optedIn = OneSignal.User?.PushSubscription?.optedIn
-            if (optedIn) setSubStatus('subscribed')
-          } catch {}
-        }, delay)
-      }
     }
     check()
+    return () => cleanup()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId])
 
   // ── Subscribe via OneSignal ──
-  async function subscribePush() {
+  // forceFresh=true: invalida subscription antiga e cria uma nova (caso o token APNS esteja morto)
+  async function subscribePush(forceFresh = false) {
     if (!userId) { setSubError('Faça login primeiro.'); setSubStatus('error'); return false }
+
+    const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent)
 
     setSubStatus('subscribing')
     setSubError('')
 
-    // Fire native dialog IMMEDIATELY — iOS requires no await before this
-    const permPromise = (typeof Notification !== 'undefined' && Notification.permission === 'default')
-      ? Notification.requestPermission()
-      : Promise.resolve(typeof Notification !== 'undefined' ? Notification.permission : 'denied')
-
     try {
-      const nativePerm = await permPromise
+      // Garante que a OneSignal terminou de inicializar
+      await Promise.race([
+        window.__osReady,
+        new Promise(r => setTimeout(r, 8000)),
+      ]).catch(() => {})
 
-      if (nativePerm !== 'granted') {
-        setSubError('Permissão negada. Habilite nas configurações do celular.')
+      const sub = OneSignal.User?.PushSubscription
+
+      // Login primeiro — alias correto na hora de criar subscription
+      try { await OneSignal.login(userId) } catch (e) { console.warn('login falhou', e) }
+
+      // Se forçar refresh, opt-out primeiro pra invalidar token APNS antigo
+      if (forceFresh && sub?.optedIn) {
+        try { await sub.optOut() } catch {}
+        await new Promise(r => setTimeout(r, 500))
+      }
+
+      // Se já está inscrito (e não forçou refresh), só confirma
+      if (!forceFresh && sub?.optedIn) {
+        const id = sub.id
+        console.log('[push] já inscrito, subscription_id:', id)
+        if (!id) {
+          // optedIn=true mas sem ID = estado fantasma. Força refresh.
+          return subscribePush(true)
+        }
+        setPermission('granted')
+        setSubStatus('subscribed')
+        return true
+      }
+
+      // Listener pro evento de subscription nascer
+      const subscribed = new Promise((resolve) => {
+        let done = false
+        const finish = (val) => {
+          if (done) return
+          done = true
+          try { sub?.removeEventListener?.('change', handler) } catch {}
+          resolve(val)
+        }
+        const handler = (event) => {
+          const opted = event?.current?.optedIn ?? sub?.optedIn
+          const id = event?.current?.id ?? sub?.id
+          if (opted && id) finish(true)
+        }
+        try { sub?.addEventListener?.('change', handler) } catch {}
+        setTimeout(() => {
+          const opted = sub?.optedIn === true
+          const id = sub?.id
+          finish(opted && !!id)
+        }, 30000)
+      })
+
+      // Pede permissão via OneSignal (síncrono com o gesto do usuário)
+      let permRes
+      try {
+        permRes = await OneSignal.Notifications.requestPermission()
+      } catch (e) {
+        console.warn('requestPermission erro', e)
+        permRes = Notification.permission === 'granted'
+      }
+
+      const granted = permRes === true || permRes === 'granted' || Notification.permission === 'granted'
+
+      if (!granted) {
+        setSubError(isIOS
+          ? 'Permissão negada. Vá em Ajustes > GrindUP > Notificações e ative.'
+          : 'Permissão negada. Habilite nas configurações do navegador.')
         setSubStatus('error')
         return false
       }
-
-      // Permission granted — register with OneSignal (each call has 4s timeout)
-      const t = (fn) => Promise.race([fn().catch(() => {}), new Promise(r => setTimeout(r, 4000))])
-      try { await window.__osReady } catch {}
-      await t(() => OneSignal.login(userId))
-      await t(() => OneSignal.Notifications.requestPermission())
-      await t(() => OneSignal.User?.PushSubscription?.optIn?.())
 
       setPermission('granted')
 
-      // Poll optedIn for up to 12s — iOS APNS registration can be slow
-      let optedIn = false
-      for (let i = 0; i < 12; i++) {
-        await new Promise(r => setTimeout(r, 1000))
-        optedIn = OneSignal.User?.PushSubscription?.optedIn ?? false
-        if (optedIn) break
+      // Opt-in explícito (idempotente)
+      if (!sub?.optedIn) {
+        try { sub?.optIn?.() } catch (e) { console.warn('optIn erro', e) }
       }
 
-      if (!optedIn) {
-        const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent)
+      const ok = await subscribed
+
+      if (!ok) {
+        const detail = sub?.id ? '' : ' (sem subscription_id)'
         setSubError(isIOS
-          ? 'Dispositivo não registrado. Abra o app pelo ícone na tela inicial (não pelo Safari) e tente novamente.'
-          : 'Dispositivo não registrado no OneSignal. Tente novamente.')
+          ? `Falha no registro com a Apple${detail}. Force-fechar o app, abra pelo ícone e tente de novo. Se persistir, desinstale e instale de novo.`
+          : `Dispositivo não registrado${detail}. Tente novamente.`)
         setSubStatus('error')
         return false
       }
 
+      // Re-confirma login depois que a subscription existe
+      try { await OneSignal.login(userId) } catch {}
+
+      console.log('[push] inscrito com sucesso. subscription_id:', sub?.id)
       setSubStatus('subscribed')
       return true
     } catch (err) {
       const msg = String(err?.message || err)
-      if (msg.includes('install') || msg.includes('manifest')) {
-        setSubError('Instale o app na tela inicial primeiro.')
-      } else {
-        setSubError('Erro ao ativar: ' + msg.slice(0, 80))
-      }
+      setSubError('Erro ao ativar: ' + msg.slice(0, 100))
       setSubStatus('error')
       return false
     }
@@ -159,6 +222,11 @@ export function useNotifications() {
       const ok = await subscribePush()
       if (!ok) return false
     }
+    // Confirma que temos subscription_id de verdade antes de mandar
+    const subId = OneSignal.User?.PushSubscription?.id
+    if (!subId) {
+      return 'Sem subscription_id local. Force "Atualizar app" e ative novamente.'
+    }
     try {
       const { data: result, error } = await supabase.functions.invoke('send-push', {
         body: { test: true, userId },
@@ -167,6 +235,12 @@ export function useNotifications() {
       if (result?.noRecipients) return 'noRecipients'
       if (result?.osError) return `Erro OneSignal ${result.osStatus || ''}: verifique a API key no dashboard`
       if (!result?.ok) return result?.error || 'Falhou'
+      // recipients > 0 mas com errors = token APNS inválido (cenário comum após reinstalar)
+      if (result?.errors) {
+        console.warn('[push] enviado mas com erros:', result.errors)
+        return `Token APNS rejeitado pela Apple: ${JSON.stringify(result.errors).slice(0, 120)}`
+      }
+      console.log('[push] enviado, notificationId:', result?.notificationId, 'recipients:', result?.recipients)
       return true
     } catch (e) {
       return `Erro: ${String(e).slice(0, 60)}`
@@ -236,10 +310,11 @@ export function useNotifications() {
     const utcOffset = -new Date().getTimezoneOffset()
     const newSettings = { ...notifSettings, enabled: val, utcOffset }
 
-    if (val && permission !== 'granted') {
+    if (val && (permission !== 'granted' || subStatus !== 'subscribed')) {
       // Salva no localStorage ANTES do async — iOS pode recarregar a página ao registrar SW
       if (userId) lsSave(userId, { ...newSettings, enabled: true })
-      subscribePush().then(ok => {
+      // forceFresh=true: garante token APNS novo, não confia em estado cached
+      subscribePush(true).then(ok => {
         if (ok) {
           saveNotifSettings({ ...newSettings, enabled: true })
         } else {
@@ -257,6 +332,78 @@ export function useNotifications() {
     saveNotifSettings({ ...notifSettings, times, utcOffset: -new Date().getTimezoneOffset() })
   }
 
+  // ── Teste de notificação LOCAL (sem servidor) ──
+  // Se isso funcionar mas o testPush não, problema é OneSignal/Apple, não código.
+  async function testLocalNotification() {
+    try {
+      if (Notification.permission !== 'granted') {
+        return 'Permissão não concedida no nível do iOS. Vá em Ajustes > GrindUP > Notificações.'
+      }
+      const reg = await navigator.serviceWorker?.ready
+      if (!reg) return 'Service Worker não registrado.'
+      await reg.showNotification(APP_NAME, {
+        body: 'Teste local — se você está vendo isso, o iOS está OK.',
+        icon: '/icons/icon-192.png',
+        badge: '/icons/icon-32.png',
+        tag: 'grindup-local-test',
+      })
+      return true
+    } catch (e) {
+      return `Erro local: ${String(e?.message || e).slice(0, 80)}`
+    }
+  }
+
+  // ── Teste com DELAY: dispara depois de N segundos pra você fechar o app antes ──
+  // iOS não mostra banner quando o PWA está em foreground — precisa estar fechado.
+  function testLocalDelayed(seconds = 10) {
+    const fireAt = Date.now() + seconds * 1000
+    setTimeout(async () => {
+      try {
+        const reg = await navigator.serviceWorker?.ready
+        if (!reg) return
+        await reg.showNotification(APP_NAME, {
+          body: 'Notificação local com delay funcionou! 🎉',
+          icon: '/icons/icon-192.png',
+          badge: '/icons/icon-32.png',
+          tag: 'grindup-delayed-test',
+          requireInteraction: true,
+        })
+      } catch {}
+    }, seconds * 1000)
+    return fireAt
+  }
+
+  function testRemoteDelayed(seconds = 10) {
+    const fireAt = Date.now() + seconds * 1000
+    setTimeout(() => {
+      supabase.functions.invoke('send-push', {
+        body: { test: true, userId, body: 'Notificação remota com delay funcionou! 🎉' },
+      }).catch(() => {})
+    }, seconds * 1000)
+    return fireAt
+  }
+
+  // ── Diagnóstico: dados pra debug ──
+  function getDiagnostics() {
+    const sub = OneSignal.User?.PushSubscription
+    const ua = navigator.userAgent
+    const iosMatch = ua.match(/OS (\d+)_(\d+)/)
+    const iosVersion = iosMatch ? `${iosMatch[1]}.${iosMatch[2]}` : null
+    return {
+      subscriptionId: sub?.id || null,
+      subscriptionToken: sub?.token ? sub.token.slice(0, 20) + '...' : null,
+      optedIn: sub?.optedIn ?? null,
+      onesignalId: OneSignal.User?.onesignalId || null,
+      externalId: OneSignal.User?.externalId || null,
+      browserPermission: typeof Notification !== 'undefined' ? Notification.permission : 'n/a',
+      isStandalone: window.matchMedia?.('(display-mode: standalone)').matches || window.navigator?.standalone === true,
+      isIOS: /iphone|ipad|ipod/i.test(ua),
+      iosVersion,
+      hasServiceWorker: 'serviceWorker' in navigator,
+      userId,
+    }
+  }
+
   return {
     permission,
     subStatus,
@@ -268,5 +415,9 @@ export function useNotifications() {
     toggleEnabled,
     setTimes,
     testPush,
+    testLocalNotification,
+    testLocalDelayed,
+    testRemoteDelayed,
+    getDiagnostics,
   }
 }

@@ -61,13 +61,24 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ ok: false, osError: true, osStatus: res.status, osData: data }), { headers: CORS })
     }
 
-    const d = data as { recipients?: number; errors?: unknown }
+    const d = data as { id?: string; recipients?: number; errors?: unknown; external_id?: string }
     if (d.recipients === 0) {
       console.warn('OneSignal: no recipients for', userId, JSON.stringify(d.errors))
       return new Response(JSON.stringify({ ok: false, noRecipients: true, errors: d.errors }), { headers: CORS })
     }
 
-    return new Response(JSON.stringify({ ok: true, recipients: d.recipients }), { headers: CORS })
+    // recipients > 0 mas pode ter erros parciais (token APNS inválido, etc)
+    const hasErrors = d.errors && (Array.isArray(d.errors) ? d.errors.length > 0 : Object.keys(d.errors).length > 0)
+    if (hasErrors) {
+      console.warn('OneSignal partial errors:', JSON.stringify(d.errors))
+    }
+
+    return new Response(JSON.stringify({
+      ok: true,
+      recipients: d.recipients,
+      notificationId: d.id,
+      errors: hasErrors ? d.errors : undefined,
+    }), { headers: CORS })
   } catch (err) {
     console.error('send-push error:', err)
     return new Response(JSON.stringify({ ok: false, error: String(err) }), { headers: CORS })

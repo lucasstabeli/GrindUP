@@ -35,9 +35,17 @@ function AvatarButton({ profile, onClick }) {
 
 export default function TopBar({ title, onAdmin, isAdmin }) {
   const { profile, setTheme, setProfile } = useUserStore()
-  const { permission, subStatus, subError, enabled, times, requestPermission, subscribePush, toggleEnabled, setTimes, testPush } = useNotifications()
+  const { permission, subStatus, subError, enabled, times, requestPermission, subscribePush, toggleEnabled, setTimes, testPush, testLocalNotification, testLocalDelayed, testRemoteDelayed, getDiagnostics } = useNotifications()
   const [testingPush, setTestingPush] = useState(false)
   const [testResult, setTestResult] = useState('')
+  const [showDiag, setShowDiag] = useState(false)
+  const [countdown, setCountdown] = useState(0)
+
+  useEffect(() => {
+    if (countdown <= 0) return
+    const id = setInterval(() => setCountdown(v => v - 1), 1000)
+    return () => clearInterval(id)
+  }, [countdown])
 
   const [showTheme, setShowTheme] = useState(false)
   const [showNotif, setShowNotif] = useState(false)
@@ -412,14 +420,16 @@ export default function TopBar({ title, onAdmin, isAdmin }) {
             {/* Test button */}
             {testResult && (
               <div style={{ padding: '10px 14px', borderRadius: 10, marginBottom: 10, fontSize: '0.85rem', fontWeight: 700,
-                background: testResult === 'ok' ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)',
-                color: testResult === 'ok' ? '#22c55e' : 'var(--danger)',
-                border: `1px solid ${testResult === 'ok' ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.3)'}` }}>
+                background: (testResult === 'ok' || testResult === 'localOk') ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)',
+                color: (testResult === 'ok' || testResult === 'localOk') ? '#22c55e' : 'var(--danger)',
+                border: `1px solid ${(testResult === 'ok' || testResult === 'localOk') ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.3)'}` }}>
                 {testResult === 'ok'
-                  ? '✅ Notificação enviada! Feche o app e aguarde.'
-                  : testResult === 'noRecipients'
-                    ? '❌ Dispositivo não registrado no OneSignal. No iPhone: instale pela Tela de Início e ative novamente.'
-                    : '❌ ' + testResult}
+                  ? '✅ Notificação enviada pelo servidor! Feche o app e aguarde até 30s.'
+                  : testResult === 'localOk'
+                    ? '✅ Notificação local disparada. Se você não viu nada, é problema do iOS (Ajustes > GrindUP > Notificações).'
+                    : testResult === 'noRecipients'
+                      ? '❌ Dispositivo não registrado no OneSignal. Desinstale o app e instale de novo pela Tela de Início.'
+                      : '❌ ' + testResult}
               </div>
             )}
             <button
@@ -439,8 +449,89 @@ export default function TopBar({ title, onAdmin, isAdmin }) {
                 cursor: testingPush ? 'wait' : 'pointer', opacity: testingPush ? 0.6 : 1,
               }}
             >
-              {testingPush ? '⏳ Enviando...' : '📲 Testar notificação agora'}
+              {testingPush ? '⏳ Enviando...' : '📲 Testar notificação (servidor)'}
             </button>
+
+            {/* Teste local — verifica se iOS+SW estão OK sem passar pelo OneSignal */}
+            <button
+              className="btn"
+              onClick={async () => {
+                setTestResult('')
+                const result = await testLocalNotification()
+                setTestResult(result === true ? 'localOk' : typeof result === 'string' ? result : 'Falhou')
+              }}
+              style={{
+                width: '100%', background: 'transparent', color: 'var(--muted)',
+                border: '1px solid var(--line)', padding: '10px', borderRadius: 10,
+                fontSize: '0.82rem', fontWeight: 700, textTransform: 'none', letterSpacing: 0,
+                cursor: 'pointer', marginTop: 8,
+              }}
+            >
+              🧪 Testar notificação local (sem servidor)
+            </button>
+
+            {/* Testes com DELAY — feche o app durante o countdown */}
+            <div style={{ marginTop: 12, padding: 10, background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)', borderRadius: 10 }}>
+              <div style={{ fontSize: '0.78rem', color: '#f59e0b', fontWeight: 700, marginBottom: 8, textAlign: 'center' }}>
+                ⚠️ iOS NÃO mostra banner com app aberto
+              </div>
+              <div style={{ fontSize: '0.72rem', color: 'var(--muted)', marginBottom: 10, textAlign: 'center' }}>
+                Aperte um botão e <strong>FECHE O APP</strong> (swipe up) durante o countdown
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <button
+                  onClick={() => {
+                    setTestResult('')
+                    setCountdown(10)
+                    testLocalDelayed(10)
+                  }}
+                  disabled={countdown > 0}
+                  style={{
+                    width: '100%', background: 'var(--surface-2)', color: 'var(--text)',
+                    border: '1px solid var(--line)', padding: '10px', borderRadius: 8,
+                    fontSize: '0.8rem', fontWeight: 700, fontFamily: 'inherit',
+                    cursor: countdown > 0 ? 'wait' : 'pointer', opacity: countdown > 0 ? 0.6 : 1,
+                  }}
+                >
+                  {countdown > 0 ? `⏳ Disparando em ${countdown}s — FECHE O APP!` : '🧪 Local em 10s'}
+                </button>
+                <button
+                  onClick={() => {
+                    setTestResult('')
+                    setCountdown(10)
+                    testRemoteDelayed(10)
+                  }}
+                  disabled={countdown > 0}
+                  style={{
+                    width: '100%', background: 'var(--surface-2)', color: 'var(--text)',
+                    border: '1px solid var(--line)', padding: '10px', borderRadius: 8,
+                    fontSize: '0.8rem', fontWeight: 700, fontFamily: 'inherit',
+                    cursor: countdown > 0 ? 'wait' : 'pointer', opacity: countdown > 0 ? 0.6 : 1,
+                  }}
+                >
+                  {countdown > 0 ? `⏳ Disparando em ${countdown}s — FECHE O APP!` : '📲 Servidor em 10s'}
+                </button>
+              </div>
+            </div>
+
+            {/* Diagnóstico */}
+            <button
+              onClick={() => setShowDiag(v => !v)}
+              style={{
+                width: '100%', background: 'transparent', color: 'var(--muted)',
+                border: 'none', padding: '8px', fontSize: '0.72rem',
+                fontFamily: 'inherit', cursor: 'pointer', marginTop: 4, textDecoration: 'underline',
+              }}
+            >
+              {showDiag ? 'Ocultar' : 'Mostrar'} diagnóstico
+            </button>
+            {showDiag && (
+              <pre style={{
+                background: 'var(--surface-2)', border: '1px solid var(--line)',
+                borderRadius: 8, padding: 10, fontSize: '0.7rem', color: 'var(--muted)',
+                overflow: 'auto', maxHeight: 240, marginTop: 4, whiteSpace: 'pre-wrap', wordBreak: 'break-all',
+              }}>{JSON.stringify(getDiagnostics(), null, 2)}</pre>
+            )}
           </div>
         </div>
       )}
