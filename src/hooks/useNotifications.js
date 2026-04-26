@@ -66,14 +66,16 @@ export function useNotifications() {
         if (perm === 'granted') setPermission('granted')
         else if (perm === 'denied') setPermission('denied')
       } catch {}
-      // iOS: subscription pode demorar a aparecer após reload do SW — tenta de novo em 3s
-      setTimeout(async () => {
-        try { await OneSignal.login(userId) } catch {}
-        try {
-          const optedIn = OneSignal.User?.PushSubscription?.optedIn
-          if (optedIn) setSubStatus('subscribed')
-        } catch {}
-      }, 3000)
+      // iOS: subscription pode demorar a aparecer após reload do SW — tenta de novo em 3s e 8s
+      for (const delay of [3000, 8000]) {
+        setTimeout(async () => {
+          try { await OneSignal.login(userId) } catch {}
+          try {
+            const optedIn = OneSignal.User?.PushSubscription?.optedIn
+            if (optedIn) setSubStatus('subscribed')
+          } catch {}
+        }, delay)
+      }
     }
     check()
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -109,24 +111,22 @@ export function useNotifications() {
         return false
       }
 
-      // Permission granted — try OneSignal registration with 8s timeout
+      // Permission granted — register with OneSignal (8s timeout)
       const osTimeout = new Promise(r => setTimeout(r, 8000))
       const osRegister = (async () => {
-        await window.__osReady
-        const os = window.OneSignal
-        if (!os) return
-        try { await os.Notifications.requestPermission() } catch {}
-        try { await os.login(userId) } catch {}
+        try { await window.__osReady } catch {}
+        try { await OneSignal.Notifications.requestPermission() } catch {}
+        try { await OneSignal.login(userId) } catch {}
       })()
       await Promise.race([osRegister, osTimeout])
 
       setPermission('granted')
 
-      // Poll optedIn for up to 6s — iOS APNS registration is async
+      // Poll optedIn for up to 8s — iOS APNS registration is async
       let optedIn = false
-      for (let i = 0; i < 6; i++) {
+      for (let i = 0; i < 8; i++) {
         await new Promise(r => setTimeout(r, 1000))
-        optedIn = window.OneSignal?.User?.PushSubscription?.optedIn ?? false
+        optedIn = OneSignal.User?.PushSubscription?.optedIn ?? false
         if (optedIn) break
       }
 
