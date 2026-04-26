@@ -100,9 +100,8 @@ export function useNotifications() {
         return false
       }
 
-      // Permission granted — try OneSignal registration with 5s timeout
-      // If it hangs, we still mark subscribed so UI doesn't freeze
-      const osTimeout = new Promise(r => setTimeout(r, 5000))
+      // Permission granted — try OneSignal registration with 8s timeout
+      const osTimeout = new Promise(r => setTimeout(r, 8000))
       const osRegister = (async () => {
         await window.__osReady
         const os = window.OneSignal
@@ -113,8 +112,25 @@ export function useNotifications() {
       await Promise.race([osRegister, osTimeout])
 
       setPermission('granted')
-      setSubStatus('subscribed')
 
+      // Poll optedIn for up to 6s — iOS APNS registration is async
+      let optedIn = false
+      for (let i = 0; i < 6; i++) {
+        await new Promise(r => setTimeout(r, 1000))
+        optedIn = window.OneSignal?.User?.PushSubscription?.optedIn ?? false
+        if (optedIn) break
+      }
+
+      if (!optedIn) {
+        const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent)
+        setSubError(isIOS
+          ? 'Dispositivo não registrado. Abra o app pelo ícone na tela inicial (não pelo Safari) e tente novamente.'
+          : 'Dispositivo não registrado no OneSignal. Tente novamente.')
+        setSubStatus('error')
+        return false
+      }
+
+      setSubStatus('subscribed')
       return true
     } catch (err) {
       const msg = String(err?.message || err)
@@ -146,12 +162,16 @@ export function useNotifications() {
       if (!ok) return false
     }
     try {
-      const { error } = await supabase.functions.invoke('send-push', {
+      const { data: result, error } = await supabase.functions.invoke('send-push', {
         body: { test: true, userId },
       })
-      return !error
-    } catch {
-      return false
+      if (error) return `Erro ao chamar servidor: ${String(error?.message || error).slice(0, 60)}`
+      if (result?.noRecipients) return 'noRecipients'
+      if (result?.osError) return `Erro OneSignal ${result.osStatus || ''}: verifique a API key no dashboard`
+      if (!result?.ok) return result?.error || 'Falhou'
+      return true
+    } catch (e) {
+      return `Erro: ${String(e).slice(0, 60)}`
     }
   }
 

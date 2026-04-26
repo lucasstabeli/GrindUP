@@ -328,14 +328,14 @@ export default function TopBar({ title, onAdmin, isAdmin }) {
               <button onClick={() => { setShowNotif(false); setTestResult('') }} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: '1.4rem', cursor: 'pointer', lineHeight: 1 }}>×</button>
             </div>
 
-            {/* iOS install guide */}
-            {/iphone|ipad|ipod/i.test(navigator.userAgent) && subStatus !== 'subscribed' && (
-              <div style={{ background: 'rgba(59,130,246,0.1)', border: '1px solid rgba(59,130,246,0.3)', borderRadius: 10, padding: '12px 14px', marginBottom: 16, fontSize: '0.82rem', color: '#3b82f6' }}>
-                <div style={{ fontWeight: 800, marginBottom: 4 }}>📱 iPhone detectado</div>
-                Para receber notificações:<br />
-                1. Abra no <strong>Safari</strong> (não Chrome)<br />
-                2. Toque em <strong>Compartilhar →</strong> "Adicionar à Tela de Início"<br />
-                3. Abra o app instalado e ative aqui
+            {/* iOS install guide — always visible on iPhone */}
+            {/iphone|ipad|ipod/i.test(navigator.userAgent) && (
+              <div style={{ background: 'rgba(59,130,246,0.08)', border: '1px solid rgba(59,130,246,0.25)', borderRadius: 10, padding: '12px 14px', marginBottom: 16, fontSize: '0.82rem', color: '#3b82f6' }}>
+                <div style={{ fontWeight: 800, marginBottom: 4 }}>📱 iPhone — obrigatório para funcionar</div>
+                1. Abra no <strong>Safari</strong> (não Chrome, não outro app)<br />
+                2. Toque em <strong>Compartilhar</strong> → "<strong>Adicionar à Tela de Início</strong>"<br />
+                3. Abra o GrindUP pelo <strong>ícone instalado</strong><br />
+                4. Ative as notificações aqui dentro
               </div>
             )}
 
@@ -419,7 +419,11 @@ export default function TopBar({ title, onAdmin, isAdmin }) {
                 background: testResult === 'ok' ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)',
                 color: testResult === 'ok' ? '#22c55e' : 'var(--danger)',
                 border: `1px solid ${testResult === 'ok' ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.3)'}` }}>
-                {testResult === 'ok' ? '✅ Notificação enviada! Feche o app e aguarde.' : '❌ ' + testResult}
+                {testResult === 'ok'
+                  ? '✅ Notificação enviada! Feche o app e aguarde.'
+                  : testResult === 'noRecipients'
+                    ? '❌ Dispositivo não registrado no OneSignal. No iPhone: instale pela Tela de Início e ative novamente.'
+                    : '❌ ' + testResult}
               </div>
             )}
             <button
@@ -427,8 +431,8 @@ export default function TopBar({ title, onAdmin, isAdmin }) {
               onClick={async () => {
                 setTestingPush(true)
                 setTestResult('')
-                const ok = await testPush()
-                setTestResult(ok ? 'ok' : 'Falhou. Verifique se o push está ativado.')
+                const result = await testPush()
+                setTestResult(result === true ? 'ok' : result === 'noRecipients' ? 'noRecipients' : typeof result === 'string' ? result : 'Falhou')
                 setTestingPush(false)
               }}
               disabled={testingPush}
