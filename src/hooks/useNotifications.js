@@ -133,8 +133,13 @@ export function useNotifications() {
       const { data, error } = await supabase.functions.invoke('send-push', {
         body: { test: true, userId },
       })
-      if (error) return `Erro: ${JSON.stringify(error).slice(0, 120)}`
-      if (data?.error) return `OneSignal: ${JSON.stringify(data.error).slice(0, 120)}`
+      if (error) {
+        // Extract actual body from FunctionsFetchError context
+        let detail = error?.context?.body || error?.message || JSON.stringify(error)
+        if (typeof detail === 'object') detail = JSON.stringify(detail)
+        return `Erro: ${String(detail).slice(0, 150)}`
+      }
+      if (data?.error) return `OS: ${JSON.stringify(data.error).slice(0, 150)}`
       return true
     } catch (e) {
       return `Exceção: ${String(e).slice(0, 80)}`
