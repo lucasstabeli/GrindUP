@@ -137,10 +137,22 @@ export function useNotifications() {
       // Login primeiro — alias correto na hora de criar subscription
       try { await withTimeout(OneSignal.login(userId), 8000, 'login') } catch (e) { console.warn('login falhou', e) }
 
-      // Se forçar refresh, opt-out primeiro pra invalidar token APNS antigo
-      if (forceFresh && sub?.optedIn) {
-        try { await sub.optOut() } catch {}
-        await new Promise(r => setTimeout(r, 500))
+      // Se forçar refresh, limpa subscription antiga em DOIS níveis:
+      // 1) OneSignal (registro deles)
+      // 2) Browser PushManager (iOS PWA cacheia subscription quebrada após app ser fechado)
+      if (forceFresh) {
+        if (sub?.optedIn) {
+          try { await sub.optOut() } catch {}
+        }
+        try {
+          const reg = await navigator.serviceWorker?.ready
+          const browserSub = await reg?.pushManager?.getSubscription()
+          if (browserSub) {
+            console.log('[push] forçando unsubscribe no browser (limpando cache iOS)')
+            await browserSub.unsubscribe()
+          }
+        } catch (e) { console.warn('unsubscribe browser falhou', e) }
+        await new Promise(r => setTimeout(r, 800))
       }
 
       // Se já está inscrito (e não forçou refresh), só confirma
@@ -214,9 +226,41 @@ export function useNotifications() {
       if (!ok) {
         const hasId = !!sub?.id
         const hasToken = !!sub?.token
+
+        // Última tentativa: re-registra o SW do zero (resolve cache de subscription corrompida no iOS)
+        if (forceFresh && hasId && !hasToken) {
+          console.log('[push] token continua null após forceFresh — re-registrando SW e tentando última vez')
+          try {
+            const regs = await navigator.serviceWorker.getRegistrations()
+            for (const r of regs) await r.unregister()
+            // Re-registra
+            const newReg = await navigator.serviceWorker.register('/sw.js', { scope: '/' })
+            // Espera ativar
+            if (newReg.installing) {
+              await new Promise(resolve => {
+                newReg.installing.addEventListener('statechange', e => {
+                  if (e.target.state === 'activated') resolve()
+                })
+                setTimeout(resolve, 5000)
+              })
+            }
+            // Tenta opt-in mais uma vez
+            try { OneSignal.User?.PushSubscription?.optIn?.() } catch {}
+            await new Promise(r => setTimeout(r, 8000))
+
+            const finalSub = OneSignal.User?.PushSubscription
+            if (finalSub?.optedIn && finalSub?.id && finalSub?.token) {
+              try { await OneSignal.login(userId) } catch {}
+              setSubStatus('subscribed')
+              setPermission('granted')
+              return true
+            }
+          } catch (e) { console.warn('último recurso falhou', e) }
+        }
+
         let detail = ''
         if (hasId && !hasToken) {
-          detail = ' — Token vazio: a config Web do OneSignal está incompleta. Vá no dashboard > Settings > Push & In-App > Web e confirme o Site URL.'
+          detail = ' — Token vazio. Tente apertar "☢️ Reset completo" no painel.'
         } else if (!hasId) {
           detail = ' — Subscription nem foi criada. Verifique conexão e config do OneSignal.'
         }
