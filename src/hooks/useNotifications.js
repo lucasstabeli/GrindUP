@@ -53,26 +53,37 @@ export function useNotifications() {
   useEffect(() => {
     if (!userId) return
     let cleanup = () => {}
+    let cancelled = false
+
     const check = async () => {
       try { await window.__osReady } catch {}
+      if (cancelled) return
 
-      // Se já existe subscription com APNS válido (id presente), faz login (re-aliasa).
       try {
         const sub = OneSignal.User?.PushSubscription
-        // optedIn sem id/token = estado fantasma. Não marca como subscribed.
-        if (sub?.optedIn && sub?.id && sub?.token) {
-          try { await OneSignal.login(userId) } catch {}
-          setSubStatus('subscribed')
+
+        // Polling: depois de reabrir o PWA, OneSignal pode demorar 1-3s pra
+        // restaurar id/token do cache. Tentamos por até 8s antes de desistir.
+        let attempts = 0
+        while (attempts < 16 && !cancelled) {
+          if (sub?.optedIn && sub?.id && sub?.token) {
+            try { await OneSignal.login(userId) } catch {}
+            if (!cancelled) setSubStatus('subscribed')
+            break
+          }
+          await new Promise(r => setTimeout(r, 500))
+          attempts++
         }
 
-        // Listener pra refletir qualquer mudança futura (subscribe/unsubscribe via outro device, etc)
+        // Listener pra mudanças futuras
         const handler = (event) => {
           const opted = event?.current?.optedIn ?? sub?.optedIn
-          if (opted) {
+          const id = event?.current?.id ?? sub?.id
+          const token = event?.current?.token ?? sub?.token
+          if (opted && id && token) {
             setSubStatus('subscribed')
-            // Re-aliasa quando a subscription nascer
             OneSignal.login(userId).catch(() => {})
-          } else {
+          } else if (!opted) {
             setSubStatus(prev => prev === 'subscribed' ? 'idle' : prev)
           }
         }
@@ -87,7 +98,7 @@ export function useNotifications() {
       } catch {}
     }
     check()
-    return () => cleanup()
+    return () => { cancelled = true; cleanup() }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId])
 
