@@ -354,7 +354,17 @@ export function useNotifications() {
       // Re-confirma login depois que a subscription existe
       try { await OneSignal.login(userId) } catch {}
 
-      console.log('[push] inscrito com sucesso. subscription_id:', sub?.id)
+      // CRÍTICO: salva o subscription_id no Supabase. O alias external_id da OneSignal
+      // não persiste corretamente no iOS — usar subscription_id direto é mais confiável.
+      const finalSubId = sub?.id
+      if (finalSubId && D) {
+        try {
+          await saveImmediate({ ...D, oneSignalSubId: finalSubId })
+          pushLog('subscription_id salvo no Supabase', finalSubId)
+        } catch (e) { pushLog('erro salvando subscription_id', e?.message) }
+      }
+
+      console.log('[push] inscrito com sucesso. subscription_id:', finalSubId)
       setSubStatus('subscribed')
       return true
     } catch (err) {
