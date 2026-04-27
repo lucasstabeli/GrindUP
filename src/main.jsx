@@ -22,12 +22,14 @@ function _pLog(msg, data) {
   } catch {}
 }
 
-// Registra o SW manualmente ANTES do OneSignal
+// Registra o SW manualmente ANTES do OneSignal.
+// NOME OBRIGATÓRIO: 'OneSignalSDKWorker.js' — react-onesignal v3 ignora serviceWorkerPath
+// e busca esse nome fixo. Tentar usar /sw.js fazia o init falhar com "Script load failed".
 window.__swReady = (async () => {
   _pLog('boot: iniciando')
   if (!('serviceWorker' in navigator)) { _pLog('boot: sem SW support'); return null }
   try {
-    const reg = await navigator.serviceWorker.register('/sw.js', { scope: '/' })
+    const reg = await navigator.serviceWorker.register('/OneSignalSDKWorker.js', { scope: '/' })
     _pLog('SW registrado', { scope: reg.scope, scriptURL: reg.active?.scriptURL || reg.installing?.scriptURL })
     if (reg.installing) {
       _pLog('SW instalando, aguardando activate')
@@ -51,8 +53,6 @@ window.__osReady = window.__swReady.then(() => {
   _pLog('OneSignal.init() chamado')
   return OneSignal.init({
     appId: 'aeb9dee6-91d7-4806-b7b5-b01f7851d4b7',
-    serviceWorkerPath: '/sw.js',
-    serviceWorkerParam: { scope: '/' },
     notifyButton: { enable: false },
     welcomeNotification: { disable: true },
   })
@@ -74,7 +74,7 @@ window.__osReady = window.__swReady.then(() => {
     if ('caches' in window) {
       const keys = await caches.keys()
       await Promise.all(
-        keys.filter(k => k !== 'grindupv20').map(k => caches.delete(k))
+        keys.filter(k => k !== 'grindupv21').map(k => caches.delete(k))
       )
     }
   } catch {}
