@@ -101,6 +101,19 @@ export function useNotifications() {
     setSubStatus('subscribing')
     setSubError('')
 
+    // Helper: timeout pra qualquer Promise (evita travar pra sempre)
+    const withTimeout = (promise, ms, label) =>
+      Promise.race([
+        promise,
+        new Promise((_, rej) => setTimeout(() => rej(new Error(`timeout: ${label}`)), ms)),
+      ])
+
+    // Failsafe geral: se a função toda passar de 50s, aborta
+    const overallTimeout = setTimeout(() => {
+      setSubError('Timeout: registro demorou demais. Tente de novo.')
+      setSubStatus('error')
+    }, 50000)
+
     try {
       // Garante que a OneSignal terminou de inicializar
       await Promise.race([
@@ -111,7 +124,7 @@ export function useNotifications() {
       const sub = OneSignal.User?.PushSubscription
 
       // Login primeiro — alias correto na hora de criar subscription
-      try { await OneSignal.login(userId) } catch (e) { console.warn('login falhou', e) }
+      try { await withTimeout(OneSignal.login(userId), 8000, 'login') } catch (e) { console.warn('login falhou', e) }
 
       // Se forçar refresh, opt-out primeiro pra invalidar token APNS antigo
       if (forceFresh && sub?.optedIn) {
@@ -162,7 +175,7 @@ export function useNotifications() {
       // Pede permissão via OneSignal (síncrono com o gesto do usuário)
       let permRes
       try {
-        permRes = await OneSignal.Notifications.requestPermission()
+        permRes = await withTimeout(OneSignal.Notifications.requestPermission(), 10000, 'requestPermission')
       } catch (e) {
         console.warn('requestPermission erro', e)
         permRes = Notification.permission === 'granted'
@@ -212,6 +225,8 @@ export function useNotifications() {
       setSubError('Erro ao ativar: ' + msg.slice(0, 100))
       setSubStatus('error')
       return false
+    } finally {
+      clearTimeout(overallTimeout)
     }
   }
 
@@ -393,6 +408,30 @@ export function useNotifications() {
     return fireAt
   }
 
+  // ── Reset nuclear: desregistra SW, faz logout, limpa cache, reload ──
+  // Use quando o estado fica travado em "ativando..." ou subscription corrompida.
+  async function resetPushSystem() {
+    try { await OneSignal.User?.PushSubscription?.optOut?.() } catch {}
+    try { await OneSignal.logout?.() } catch {}
+    try {
+      if ('serviceWorker' in navigator) {
+        const regs = await navigator.serviceWorker.getRegistrations()
+        for (const r of regs) await r.unregister()
+      }
+    } catch {}
+    try {
+      if ('caches' in window) {
+        const keys = await caches.keys()
+        await Promise.all(keys.map(k => caches.delete(k)))
+      }
+    } catch {}
+    try {
+      if (userId) localStorage.removeItem(lsKey(userId))
+      sessionStorage.removeItem('grindup_cleaned')
+    } catch {}
+    window.location.href = '/?_pushreset=' + Date.now()
+  }
+
   // ── Diagnóstico: dados pra debug ──
   async function getDiagnostics() {
     const sub = OneSignal.User?.PushSubscription
@@ -472,5 +511,6 @@ export function useNotifications() {
     testLocalDelayed,
     testRemoteDelayed,
     getDiagnostics,
+    resetPushSystem,
   }
 }

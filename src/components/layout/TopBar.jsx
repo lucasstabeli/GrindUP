@@ -35,7 +35,7 @@ function AvatarButton({ profile, onClick }) {
 
 export default function TopBar({ title, onAdmin, isAdmin }) {
   const { profile, setTheme, setProfile } = useUserStore()
-  const { permission, subStatus, subError, enabled, times, requestPermission, subscribePush, toggleEnabled, setTimes, testPush, testLocalNotification, testLocalDelayed, testRemoteDelayed, getDiagnostics } = useNotifications()
+  const { permission, subStatus, subError, enabled, times, requestPermission, subscribePush, toggleEnabled, setTimes, testPush, testLocalNotification, testLocalDelayed, testRemoteDelayed, getDiagnostics, resetPushSystem } = useNotifications()
   const [testingPush, setTestingPush] = useState(false)
   const [testResult, setTestResult] = useState('')
   const [showDiag, setShowDiag] = useState(false)
@@ -521,6 +521,22 @@ export default function TopBar({ title, onAdmin, isAdmin }) {
                 </button>
               </div>
             </div>
+
+            {/* Reset nuclear — quando estado fica travado */}
+            <button
+              onClick={async () => {
+                if (!confirm('Vai desregistrar tudo, limpar cache e recarregar. Continuar?')) return
+                await resetPushSystem()
+              }}
+              style={{
+                width: '100%', background: 'transparent', color: 'var(--danger)',
+                border: '1px solid var(--danger)', padding: '10px', borderRadius: 10,
+                fontSize: '0.78rem', fontWeight: 700, fontFamily: 'inherit',
+                cursor: 'pointer', marginTop: 12, textTransform: 'none', letterSpacing: 0,
+              }}
+            >
+              ☢️ Reset completo (se travou em "ativando")
+            </button>
 
             {/* Diagnóstico */}
             <button
