@@ -24,6 +24,24 @@ function lsSave(userId, settings) {
   try { localStorage.setItem(lsKey(userId), JSON.stringify(settings)) } catch {}
 }
 
+// ── Logger persistente: guarda últimos 80 eventos no localStorage pra debug ──
+const LOG_KEY = 'grindupPushLog'
+function pushLog(msg, data) {
+  try {
+    const t = new Date().toISOString().slice(11, 19)
+    const entry = { t, msg, data: data === undefined ? null : (typeof data === 'object' ? JSON.stringify(data).slice(0, 200) : String(data).slice(0, 200)) }
+    const existing = JSON.parse(localStorage.getItem(LOG_KEY) || '[]')
+    existing.push(entry)
+    if (existing.length > 80) existing.splice(0, existing.length - 80)
+    localStorage.setItem(LOG_KEY, JSON.stringify(existing))
+    console.log('[push]', t, msg, data ?? '')
+  } catch {}
+}
+function getLog() {
+  try { return JSON.parse(localStorage.getItem(LOG_KEY) || '[]') } catch { return [] }
+}
+function clearLog() { try { localStorage.removeItem(LOG_KEY) } catch {} }
+
 export function useNotifications() {
   const { D, saveImmediate } = useGameData()
   const { profile } = useUserStore()
@@ -109,6 +127,8 @@ export function useNotifications() {
 
     const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent)
 
+    pushLog('subscribePush START', { forceFresh, isIOS, userId: userId.slice(0,8) })
+
     setSubStatus('subscribing')
     setSubError('')
 
@@ -127,31 +147,40 @@ export function useNotifications() {
 
     try {
       // Garante que a OneSignal terminou de inicializar
+      pushLog('aguardando __osReady')
       await Promise.race([
         window.__osReady,
         new Promise(r => setTimeout(r, 8000)),
       ]).catch(() => {})
 
       const sub = OneSignal.User?.PushSubscription
+      pushLog('estado inicial OneSignal', {
+        hasSub: !!sub,
+        optedIn: sub?.optedIn,
+        id: sub?.id,
+        token: sub?.token ? 'PRESENTE' : 'NULL',
+      })
 
       // Login primeiro — alias correto na hora de criar subscription
-      try { await withTimeout(OneSignal.login(userId), 8000, 'login') } catch (e) { console.warn('login falhou', e) }
+      pushLog('chamando login')
+      try { await withTimeout(OneSignal.login(userId), 8000, 'login') ; pushLog('login OK') } catch (e) { pushLog('login falhou', e?.message) }
 
-      // Se forçar refresh, limpa subscription antiga em DOIS níveis:
-      // 1) OneSignal (registro deles)
-      // 2) Browser PushManager (iOS PWA cacheia subscription quebrada após app ser fechado)
+      // Se forçar refresh, limpa subscription antiga em DOIS níveis
       if (forceFresh) {
+        pushLog('forceFresh: limpando estado anterior')
         if (sub?.optedIn) {
-          try { await sub.optOut() } catch {}
+          try { await sub.optOut(); pushLog('OneSignal optOut OK') } catch (e) { pushLog('OneSignal optOut falhou', e?.message) }
         }
         try {
           const reg = await navigator.serviceWorker?.ready
+          pushLog('SW ready', { scope: reg?.scope, scriptURL: reg?.active?.scriptURL })
           const browserSub = await reg?.pushManager?.getSubscription()
+          pushLog('browser subscription antes do unsubscribe', browserSub ? { endpoint: browserSub.endpoint?.slice(0, 50) } : 'NENHUMA')
           if (browserSub) {
-            console.log('[push] forçando unsubscribe no browser (limpando cache iOS)')
-            await browserSub.unsubscribe()
+            const unsubResult = await browserSub.unsubscribe()
+            pushLog('browser unsubscribe resultado', unsubResult)
           }
-        } catch (e) { console.warn('unsubscribe browser falhou', e) }
+        } catch (e) { pushLog('unsubscribe browser falhou', e?.message) }
         await new Promise(r => setTimeout(r, 800))
       }
 
@@ -196,15 +225,18 @@ export function useNotifications() {
       })
 
       // Pede permissão via OneSignal (síncrono com o gesto do usuário)
+      pushLog('chamando requestPermission')
       let permRes
       try {
         permRes = await withTimeout(OneSignal.Notifications.requestPermission(), 10000, 'requestPermission')
+        pushLog('requestPermission resultado', permRes)
       } catch (e) {
-        console.warn('requestPermission erro', e)
+        pushLog('requestPermission ERRO', e?.message)
         permRes = Notification.permission === 'granted'
       }
 
       const granted = permRes === true || permRes === 'granted' || Notification.permission === 'granted'
+      pushLog('permission granted?', granted)
 
       if (!granted) {
         setSubError(isIOS
@@ -217,11 +249,14 @@ export function useNotifications() {
       setPermission('granted')
 
       // Opt-in explícito (idempotente)
+      pushLog('estado antes do optIn', { optedIn: sub?.optedIn, id: sub?.id, hasToken: !!sub?.token })
       if (!sub?.optedIn) {
-        try { sub?.optIn?.() } catch (e) { console.warn('optIn erro', e) }
+        try { sub?.optIn?.() ; pushLog('optIn chamado') } catch (e) { pushLog('optIn ERRO', e?.message) }
       }
 
+      pushLog('aguardando subscription event (até 30s)')
       const ok = await subscribed
+      pushLog('subscription event resultado', { ok, id: sub?.id, hasToken: !!sub?.token, optedIn: sub?.optedIn })
 
       if (!ok) {
         const hasId = !!sub?.id
@@ -229,12 +264,15 @@ export function useNotifications() {
 
         // Última tentativa: re-registra o SW do zero (resolve cache de subscription corrompida no iOS)
         if (forceFresh && hasId && !hasToken) {
-          console.log('[push] token continua null após forceFresh — re-registrando SW e tentando última vez')
+          pushLog('ÚLTIMO RECURSO: re-registrando SW do zero')
           try {
             const regs = await navigator.serviceWorker.getRegistrations()
+            pushLog('SWs encontrados antes do unregister', regs.length)
             for (const r of regs) await r.unregister()
+            pushLog('todos SWs desregistrados')
             // Re-registra
             const newReg = await navigator.serviceWorker.register('/sw.js', { scope: '/' })
+            pushLog('SW re-registrado', { scope: newReg.scope })
             // Espera ativar
             if (newReg.installing) {
               await new Promise(resolve => {
@@ -245,25 +283,28 @@ export function useNotifications() {
               })
             }
             // Tenta opt-in mais uma vez
-            try { OneSignal.User?.PushSubscription?.optIn?.() } catch {}
+            try { OneSignal.User?.PushSubscription?.optIn?.() ; pushLog('último optIn chamado') } catch (e) { pushLog('último optIn ERRO', e?.message) }
             await new Promise(r => setTimeout(r, 8000))
 
             const finalSub = OneSignal.User?.PushSubscription
+            pushLog('estado após último recurso', { optedIn: finalSub?.optedIn, id: finalSub?.id, hasToken: !!finalSub?.token })
             if (finalSub?.optedIn && finalSub?.id && finalSub?.token) {
               try { await OneSignal.login(userId) } catch {}
               setSubStatus('subscribed')
               setPermission('granted')
+              pushLog('SUCESSO no último recurso')
               return true
             }
-          } catch (e) { console.warn('último recurso falhou', e) }
+          } catch (e) { pushLog('último recurso EXCEÇÃO', e?.message) }
         }
 
         let detail = ''
         if (hasId && !hasToken) {
-          detail = ' — Token vazio. Tente apertar "☢️ Reset completo" no painel.'
+          detail = ' — Token vazio. Veja "Mostrar diagnóstico" pra detalhes.'
         } else if (!hasId) {
-          detail = ' — Subscription nem foi criada. Verifique conexão e config do OneSignal.'
+          detail = ' — Subscription nem foi criada.'
         }
+        pushLog('FALHA FINAL', { hasId, hasToken })
         setSubError(`Falha no registro${detail}`)
         setSubStatus('error')
         return false
@@ -567,5 +608,7 @@ export function useNotifications() {
     testRemoteDelayed,
     getDiagnostics,
     resetPushSystem,
+    getLog,
+    clearLog,
   }
 }

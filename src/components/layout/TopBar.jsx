@@ -35,7 +35,16 @@ function AvatarButton({ profile, onClick }) {
 
 export default function TopBar({ title, onAdmin, isAdmin }) {
   const { profile, setTheme, setProfile } = useUserStore()
-  const { permission, subStatus, subError, enabled, times, requestPermission, subscribePush, toggleEnabled, setTimes, testPush, testLocalNotification, testLocalDelayed, testRemoteDelayed, getDiagnostics, resetPushSystem } = useNotifications()
+  const { permission, subStatus, subError, enabled, times, requestPermission, subscribePush, toggleEnabled, setTimes, testPush, testLocalNotification, testLocalDelayed, testRemoteDelayed, getDiagnostics, resetPushSystem, getLog, clearLog } = useNotifications()
+  const [showLogs, setShowLogs] = useState(false)
+  const [logData, setLogData] = useState([])
+
+  useEffect(() => {
+    if (!showLogs) return
+    setLogData(getLog())
+    const id = setInterval(() => setLogData(getLog()), 1500)
+    return () => clearInterval(id)
+  }, [showLogs, getLog])
   const [testingPush, setTestingPush] = useState(false)
   const [testResult, setTestResult] = useState('')
   const [showDiag, setShowDiag] = useState(false)
@@ -555,6 +564,37 @@ export default function TopBar({ title, onAdmin, isAdmin }) {
                 borderRadius: 8, padding: 10, fontSize: '0.7rem', color: 'var(--muted)',
                 overflow: 'auto', maxHeight: 240, marginTop: 4, whiteSpace: 'pre-wrap', wordBreak: 'break-all',
               }}>{diagData ? JSON.stringify(diagData, null, 2) : 'Carregando diagnóstico...'}</pre>
+            )}
+
+            {/* LOGS PERSISTENTES — mostra exatamente onde falhou */}
+            <button
+              onClick={() => setShowLogs(v => !v)}
+              style={{
+                width: '100%', background: 'transparent', color: '#f59e0b',
+                border: 'none', padding: '8px', fontSize: '0.78rem',
+                fontFamily: 'inherit', cursor: 'pointer', marginTop: 4, textDecoration: 'underline',
+                fontWeight: 700,
+              }}
+            >
+              {showLogs ? 'Ocultar' : '🔍 MOSTRAR'} logs detalhados ({logData.length || getLog().length})
+            </button>
+            {showLogs && (
+              <div>
+                <button
+                  onClick={() => { clearLog(); setLogData([]) }}
+                  style={{
+                    background: 'transparent', color: 'var(--danger)',
+                    border: '1px solid var(--danger)', borderRadius: 6,
+                    padding: '4px 10px', fontSize: '0.7rem', fontFamily: 'inherit',
+                    cursor: 'pointer', marginBottom: 6,
+                  }}
+                >Limpar logs</button>
+                <pre style={{
+                  background: '#000', color: '#0f0', border: '1px solid var(--line)',
+                  borderRadius: 8, padding: 10, fontSize: '0.65rem',
+                  overflow: 'auto', maxHeight: 320, whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+                }}>{logData.map(e => `${e.t} ${e.msg}${e.data ? ': ' + e.data : ''}`).join('\n') || '(vazio — ative as notificações pra gerar logs)'}</pre>
+              </div>
             )}
           </div>
         </div>
