@@ -101,20 +101,23 @@ export function useGameData() {
     saveTimer.current = setTimeout(async () => {
       const latest = qc.getQueryData(['game-data', profile?.id])
       if (latest) {
-        await supabase
+        const { error } = await supabase
           .from('user_game_data')
-          .upsert({ user_id: profile.id, data: latest, updated_at: new Date().toISOString() })
+          .upsert({ user_id: profile.id, data: latest, updated_at: new Date().toISOString() }, { onConflict: 'user_id' })
+        if (error) console.error('[save] supabase upsert FALHOU:', error)
       }
     }, 800)
   }
 
-  function saveImmediate(newD) {
+  async function saveImmediate(newD) {
     qc.setQueryData(['game-data', profile?.id], newD)
     clearTimeout(saveTimer.current)
     const latest = qc.getQueryData(['game-data', profile?.id])
-    supabase
+    const { error } = await supabase
       .from('user_game_data')
-      .upsert({ user_id: profile.id, data: latest, updated_at: new Date().toISOString() })
+      .upsert({ user_id: profile.id, data: latest, updated_at: new Date().toISOString() }, { onConflict: 'user_id' })
+    if (error) console.error('[saveImmediate] supabase upsert FALHOU:', error)
+    return !error
   }
 
   // Daily auto-reset: run at midnight boundary
@@ -167,7 +170,7 @@ export function useGameData() {
       user_id: profile.id,
       data: newD,
       updated_at: new Date().toISOString(),
-    })
+    }, { onConflict: 'user_id' })
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [D?.lastResetDate, profile?.id])
 
