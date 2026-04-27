@@ -404,7 +404,7 @@ export default function TopBar({ title, onAdmin, isAdmin }) {
             {subStatus !== 'subscribed' && (
               <button
                 className="btn btn-primary"
-                onClick={() => { subscribePush() }}
+                onClick={() => { subscribePush(true) }}
                 disabled={subStatus === 'subscribing'}
                 style={{ marginBottom: 16, opacity: subStatus === 'subscribing' ? 0.6 : 1 }}
               >

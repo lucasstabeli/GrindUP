@@ -161,6 +161,14 @@ export function useNotifications() {
         token: sub?.token ? 'PRESENTE' : 'NULL',
       })
 
+      // DETECTA ESTADO ZUMBI: tem id mas sem token = subscription quebrada.
+      // Auto-promove pra forceFresh pra limpar antes de tentar de novo.
+      const isZombie = !!sub?.id && !sub?.token
+      if (isZombie && !forceFresh) {
+        pushLog('ESTADO ZUMBI detectado (id sem token), forçando refresh')
+        forceFresh = true
+      }
+
       // Login primeiro — alias correto na hora de criar subscription
       pushLog('chamando login')
       try { await withTimeout(OneSignal.login(userId), 8000, 'login') ; pushLog('login OK') } catch (e) { pushLog('login falhou', e?.message) }
@@ -224,19 +232,23 @@ export function useNotifications() {
         }, 30000)
       })
 
-      // Pede permissão via OneSignal (síncrono com o gesto do usuário)
-      pushLog('chamando requestPermission')
-      let permRes
-      try {
-        permRes = await withTimeout(OneSignal.Notifications.requestPermission(), 10000, 'requestPermission')
-        pushLog('requestPermission resultado', permRes)
-      } catch (e) {
-        pushLog('requestPermission ERRO', e?.message)
-        permRes = Notification.permission === 'granted'
+      // Permissão: PULA OneSignal.requestPermission se já está granted (SDK trava no iOS)
+      let granted
+      if (Notification.permission === 'granted') {
+        pushLog('permissão JÁ granted — pulando requestPermission (evita trava iOS)')
+        granted = true
+      } else {
+        pushLog('chamando OneSignal.requestPermission')
+        try {
+          const permRes = await withTimeout(OneSignal.Notifications.requestPermission(), 10000, 'requestPermission')
+          pushLog('requestPermission resultado', permRes)
+          granted = permRes === true || permRes === 'granted' || Notification.permission === 'granted'
+        } catch (e) {
+          pushLog('requestPermission ERRO', e?.message)
+          granted = Notification.permission === 'granted'
+        }
       }
-
-      const granted = permRes === true || permRes === 'granted' || Notification.permission === 'granted'
-      pushLog('permission granted?', granted)
+      pushLog('permission granted final?', granted)
 
       if (!granted) {
         setSubError(isIOS
@@ -254,7 +266,36 @@ export function useNotifications() {
         try { sub?.optIn?.() ; pushLog('optIn chamado') } catch (e) { pushLog('optIn ERRO', e?.message) }
       }
 
-      pushLog('aguardando subscription event (até 30s)')
+      // Aguarda 5s pra ver se optIn funcionou. Se não, força via pushManager direto.
+      await new Promise(r => setTimeout(r, 5000))
+      pushLog('estado após 5s do optIn', { optedIn: sub?.optedIn, hasToken: !!sub?.token })
+
+      if (!sub?.token) {
+        pushLog('optIn não criou token — forçando pushManager.subscribe direto')
+        try {
+          const reg = await navigator.serviceWorker.ready
+          // Tenta extrair VAPID key do OneSignal SDK
+          let appServerKey = null
+          try {
+            // OneSignal SDK guarda a chave VAPID em vários lugares dependendo da versão
+            appServerKey = OneSignal._initOptions?.safari_web_id ||
+                           window.OneSignalDeferred?.[0]?.appId ||
+                           null
+          } catch {}
+          // Se não conseguir, tenta subscribe sem applicationServerKey (usa default do SW)
+          const browserSub = await reg.pushManager.subscribe({
+            userVisibleOnly: true,
+          })
+          pushLog('pushManager.subscribe SUCESSO', { endpoint: browserSub?.endpoint?.slice(0, 50) })
+          // Força OneSignal a reconhecer
+          try { sub?.optIn?.() } catch {}
+          await new Promise(r => setTimeout(r, 3000))
+        } catch (e) {
+          pushLog('pushManager.subscribe ERRO', e?.message)
+        }
+      }
+
+      pushLog('aguardando subscription event final (até 30s)')
       const ok = await subscribed
       pushLog('subscription event resultado', { ok, id: sub?.id, hasToken: !!sub?.token, optedIn: sub?.optedIn })
 
