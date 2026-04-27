@@ -545,27 +545,93 @@ export function useNotifications() {
     return fireAt
   }
 
-  // ── Reset nuclear: desregistra SW, faz logout, limpa cache, reload ──
+  // ── Reset nuclear: desregistra SW, apaga IndexedDB do OneSignal, limpa cache, reload ──
   // Use quando o estado fica travado em "ativando..." ou subscription corrompida.
   async function resetPushSystem() {
-    try { await OneSignal.User?.PushSubscription?.optOut?.() } catch {}
-    try { await OneSignal.logout?.() } catch {}
+    pushLog('===== RESET NUCLEAR INICIADO =====')
+
+    // 1) OneSignal: opt-out + logout
+    try { await OneSignal.User?.PushSubscription?.optOut?.() ; pushLog('reset: optOut OK') } catch (e) { pushLog('reset: optOut falhou', e?.message) }
+    try { await OneSignal.logout?.() ; pushLog('reset: logout OK') } catch (e) { pushLog('reset: logout falhou', e?.message) }
+
+    // 2) Browser: unsubscribe push subscription
+    try {
+      const reg = await navigator.serviceWorker?.getRegistration()
+      const sub = await reg?.pushManager?.getSubscription()
+      if (sub) {
+        await sub.unsubscribe()
+        pushLog('reset: pushManager.unsubscribe OK')
+      }
+    } catch (e) { pushLog('reset: unsubscribe falhou', e?.message) }
+
+    // 3) Desregistra TODOS os service workers
     try {
       if ('serviceWorker' in navigator) {
         const regs = await navigator.serviceWorker.getRegistrations()
         for (const r of regs) await r.unregister()
+        pushLog('reset: SWs desregistrados', regs.length)
       }
-    } catch {}
+    } catch (e) { pushLog('reset: unregister SW falhou', e?.message) }
+
+    // 4) APAGA IndexedDB do OneSignal — onde está o estado zumbi
+    try {
+      if ('indexedDB' in window) {
+        // OneSignal v16 usa esses DBs
+        const dbsToDelete = [
+          'ONE_SIGNAL_SDK_DB',
+          'OneSignal',
+          'OneSignalSDK',
+          'OneSignalSDKv5',
+        ]
+        // Tenta usar databases() se disponível pra pegar TODOS os DBs
+        let allDbs = []
+        try {
+          if (indexedDB.databases) {
+            const list = await indexedDB.databases()
+            allDbs = list.map(db => db.name).filter(Boolean)
+          }
+        } catch {}
+        const toDelete = [...new Set([...dbsToDelete, ...allDbs])]
+        for (const dbName of toDelete) {
+          try {
+            await new Promise((resolve) => {
+              const req = indexedDB.deleteDatabase(dbName)
+              req.onsuccess = () => resolve()
+              req.onerror = () => resolve()
+              req.onblocked = () => resolve()
+              setTimeout(resolve, 2000)
+            })
+          } catch {}
+        }
+        pushLog('reset: IndexedDB apagado', toDelete.length)
+      }
+    } catch (e) { pushLog('reset: IndexedDB falhou', e?.message) }
+
+    // 5) Limpa caches HTTP
     try {
       if ('caches' in window) {
         const keys = await caches.keys()
         await Promise.all(keys.map(k => caches.delete(k)))
+        pushLog('reset: caches limpos', keys.length)
       }
-    } catch {}
+    } catch (e) { pushLog('reset: caches falhou', e?.message) }
+
+    // 6) Limpa localStorage do app (preserva auth do supabase)
     try {
-      if (userId) localStorage.removeItem(lsKey(userId))
-      sessionStorage.removeItem('grindup_cleaned')
-    } catch {}
+      const preserved = {}
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i)
+        if (k && k.startsWith('sb-')) preserved[k] = localStorage.getItem(k)
+      }
+      localStorage.clear()
+      for (const k in preserved) localStorage.setItem(k, preserved[k])
+      sessionStorage.clear()
+      pushLog('reset: localStorage limpo (auth preservado)')
+    } catch (e) { pushLog('reset: localStorage falhou', e?.message) }
+
+    pushLog('===== RESET COMPLETO — recarregando =====')
+    // Pequena pausa pra logs persistirem (mas localStorage acabou de ser limpo, então perdem)
+    await new Promise(r => setTimeout(r, 300))
     window.location.href = '/?_pushreset=' + Date.now()
   }
 
