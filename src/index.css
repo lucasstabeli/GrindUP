@@ -358,20 +358,20 @@ p { line-height: 1.6; }
   left: 50%;
   transform: translateX(-50%);
   width: auto;
-  max-width: calc(100% - 24px);
+  max-width: calc(100% - 16px);
   background: transparent;
   border: none;
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   padding: 0;
   z-index: 100;
 }
 .nav button {
-  width: 52px;
-  height: 52px;
+  width: 48px;
+  height: 48px;
   border-radius: 50%;
   background: var(--surface);
   border: 1px solid var(--card-border);

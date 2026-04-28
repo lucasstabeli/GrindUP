@@ -33,11 +33,17 @@ const IcChest = () => (
     <path d="M20 6H4C2.9 6 2 6.9 2 8v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm0 14H4V8h16v12zm-8-9c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zM20 2H4v2h16V2z"/>
   </svg>
 )
+const IcBook = () => (
+  <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20">
+    <path d="M18 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 18H6V4h12v16zM8 6h8v2H8zm0 4h8v2H8zm0 4h5v2H8z"/>
+  </svg>
+)
 
 const TABS = [
   { id: 'hoje',       label: 'Hoje',    Icon: IcHome },
   { id: 'calendario', label: 'Agenda',  Icon: IcCalendar },
   { id: 'rotina',     label: 'Rotina',  Icon: IcClock },
+  { id: 'cursos',     label: 'Cursos',  Icon: IcBook },
   { id: 'loja',       label: 'Baú',     Icon: IcChest },
   { id: 'rank',       label: 'Rank',    Icon: IcTrophy },
 ]
@@ -59,6 +65,7 @@ export default function ClientApp() {
     hoje:       <Hoje onNavigate={setTab} />,
     calendario: <Calendario />,
     rotina:     <Rotina />,
+    cursos:     <Cursos />,
     rank:       <Rank />,
     loja:       <Loja />,
   }
