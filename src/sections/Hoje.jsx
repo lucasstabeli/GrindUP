@@ -80,7 +80,7 @@ export default function Hoje({ onNavigate }) {
         <div>
           {/* KAFFA */}
           <div className="section-head"><h2>Missão do ano</h2><span>👑 principal do ano</span></div>
-          <div className={`task-card ${D.kaffa.done ? 'done' : ''}`} style={{ borderColor: D.kaffa.done ? 'rgba(51,177,111,.45)' : 'rgba(240,106,59,.4)', position: 'relative' }}>
+          <div className={`task-card kaffa-card ${D.kaffa.done ? 'done' : ''}`} style={{ borderColor: D.kaffa.done ? 'rgba(51,177,111,.45)' : 'rgba(255,87,34,.35)', position: 'relative' }}>
             {kaffaPop > 0 && <div className="trophy-pop">+{kaffaPop} 🏆</div>}
             <div className="task-top">
               <div className="emoji-box" style={{ background: 'rgba(240,106,59,.18)', fontSize: 24 }}>👑</div>
