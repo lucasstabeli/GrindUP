@@ -53,18 +53,16 @@ export function useNotifications() {
   const [subStatus, setSubStatus] = useState('idle')
   const [subError, setSubError] = useState('')
 
-  // ── notifSettings: localStorage tem prioridade ──
+  // ── notifSettings: Supabase é fonte da verdade. localStorage é só cache
+  // pra não perder estado caso o iOS recarregue a página durante o registro do SW. ──
   const lsNotif = userId ? lsGet(userId) : null
-  const notifSettings = lsNotif || D?.notifSettings || {}
+  const notifSettings = D?.notifSettings || lsNotif || {}
 
-  // Ao montar: sincroniza localStorage → Supabase se diferente
+  // Mantém localStorage espelhando o Supabase (cache atualizado)
   useEffect(() => {
-    if (!D || !userId || !lsNotif) return
-    if (JSON.stringify(D?.notifSettings) !== JSON.stringify(lsNotif)) {
-      saveImmediate({ ...D, notifSettings: lsNotif })
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId, !!D])
+    if (!D?.notifSettings || !userId) return
+    lsSave(userId, D.notifSettings)
+  }, [userId, JSON.stringify(D?.notifSettings)])
 
   // ── Verifica status OneSignal ao montar e escuta mudanças ──
   useEffect(() => {
