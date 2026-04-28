@@ -5,6 +5,7 @@ export default function Cursos() {
   const { D, save } = useGameData()
   const [adding, setAdding] = useState(false)
   const [form, setForm] = useState({ emoji: '📚', name: '', total: '', done: '', cpp: 20 })
+  const [trophyPop, setTrophyPop] = useState(null) // index of course showing pop
 
   if (!D) return null
 
@@ -14,7 +15,16 @@ export default function Cursos() {
     if (newDone === c.done) return
     const earned = delta > 0 ? c.cpp : 0
     const courses = D.courses.map((x, j) => j === i ? { ...x, done: newDone } : x)
-    save({ ...D, courses, coins: D.coins + earned })
+    let trophies = D.trophies || 0
+    const justFinished = c.done < c.total && newDone === c.total
+    const undidFinish = c.done === c.total && newDone < c.total
+    if (justFinished) {
+      trophies += 5
+      setTrophyPop(i)
+      setTimeout(() => setTrophyPop(null), 900)
+    }
+    if (undidFinish) trophies = Math.max(0, trophies - 5)
+    save({ ...D, courses, coins: D.coins + earned, trophies })
   }
 
   function removeCourse(i) {
@@ -91,7 +101,8 @@ export default function Cursos() {
         const p = pct(c.done, c.total)
         const finished = p >= 100
         return (
-          <div key={i} className="card" style={{ marginBottom: 12, opacity: finished ? 0.75 : 1 }}>
+          <div key={i} className="card" style={{ marginBottom: 12, opacity: finished ? 0.75 : 1, position: 'relative' }}>
+            {trophyPop === i && <div className="trophy-pop">+5 🏆</div>}
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10 }}>
               <div style={{ fontSize: 28, lineHeight: 1 }}>{c.emoji}</div>
               <div style={{ flex: 1 }}>

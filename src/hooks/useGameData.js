@@ -7,15 +7,15 @@ export const ALL_DAYS = [0, 1, 2, 3, 4, 5, 6]
 
 export const DEFAULT_GAME = {
   _v: 2,
-  coins: 0, streak: 0, vacation: false,
+  coins: 0, trophies: 0, streak: 0, vacation: false,
   lastResetDate: '',
   water: { current: 0, goal: 6 },
-  kaffa: { name: 'Missão Principal', desc: 'Descreva sua missão mais importante do dia.', reward: 100, penalty: 0, done: false },
+  kaffa: { name: 'Missão Principal', desc: 'Descreva sua missão mais importante do ano.', reward: 100, penalty: 0, trophy: 20, done: false },
   tasks: [
-    { emoji: '⏰', title: 'Acordar cedo',     desc: 'Sem soneca, levanta direto.',       reward: 30, penalty: 15, state: 'idle', days: ALL_DAYS },
-    { emoji: '🏋️', title: 'Treino do dia',    desc: 'Foco total no treino.',             reward: 35, penalty: 20, state: 'idle', days: [0,1,2,3,4] },
-    { emoji: '💻', title: 'Estudo / Projeto', desc: 'Bloco profundo de estudo.',          reward: 25, penalty: 15, state: 'idle', days: ALL_DAYS },
-    { emoji: '💧', title: 'Meta de água',     desc: 'Beber todos os copos do dia.',       reward: 20, penalty: 10, state: 'idle', days: ALL_DAYS },
+    { emoji: '⏰', title: 'Acordar cedo',     desc: 'Sem soneca, levanta direto.',       reward: 30, penalty: 15, trophy: 1, state: 'idle', days: ALL_DAYS },
+    { emoji: '🏋️', title: 'Treino do dia',    desc: 'Foco total no treino.',             reward: 35, penalty: 20, trophy: 2, state: 'idle', days: [0,1,2,3,4] },
+    { emoji: '💻', title: 'Estudo / Projeto', desc: 'Bloco profundo de estudo.',          reward: 25, penalty: 15, trophy: 1, state: 'idle', days: ALL_DAYS },
+    { emoji: '💧', title: 'Meta de água',     desc: 'Beber todos os copos do dia.',       reward: 20, penalty: 10, trophy: 1, state: 'idle', days: ALL_DAYS },
   ],
   courses: [
     { emoji: '🐍', name: 'Python Avançado',      total: 313, done: 0, cpp: 20 },
@@ -89,7 +89,17 @@ export function useGameData() {
         .eq('user_id', profile.id)
         .single()
       if (error && error.code !== 'PGRST116') throw error
-      return data?.data || JSON.parse(JSON.stringify(DEFAULT_GAME))
+      const loaded = data?.data || JSON.parse(JSON.stringify(DEFAULT_GAME))
+      // Backfill new fields for existing users
+      if (loaded.trophies === undefined) loaded.trophies = 0
+      if (loaded.kaffa && loaded.kaffa.trophy === undefined) loaded.kaffa.trophy = 20
+      if (Array.isArray(loaded.tasks)) {
+        loaded.tasks = loaded.tasks.map(t => ({
+          ...t,
+          trophy: t.trophy ?? (t.title === 'Treino do dia' || t.emoji === '🏋️' ? 2 : 1),
+        }))
+      }
+      return loaded
     },
     enabled: !!profile?.id,
     staleTime: Infinity,
@@ -112,6 +122,7 @@ export function useGameData() {
   async function saveImmediate(newD) {
     qc.setQueryData(['game-data', profile?.id], newD)
     clearTimeout(saveTimer.current)
+    saveTimer.current = null
     const latest = qc.getQueryData(['game-data', profile?.id])
     const { error } = await supabase
       .from('user_game_data')
@@ -119,6 +130,38 @@ export function useGameData() {
     if (error) console.error('[saveImmediate] supabase upsert FALHOU:', error)
     return !error
   }
+
+  // Flush any pending debounced save when the page hides / unloads — otherwise
+  // closing the app within the 800ms debounce window silently loses coins/trophies.
+  useEffect(() => {
+    if (!profile?.id) return
+    function flush() {
+      if (!saveTimer.current) return
+      clearTimeout(saveTimer.current)
+      saveTimer.current = null
+      const latest = qc.getQueryData(['game-data', profile.id])
+      if (latest) {
+        supabase
+          .from('user_game_data')
+          .upsert(
+            { user_id: profile.id, data: latest, updated_at: new Date().toISOString() },
+            { onConflict: 'user_id' }
+          )
+      }
+    }
+    function onVisibility() {
+      if (document.visibilityState === 'hidden') flush()
+    }
+    window.addEventListener('pagehide', flush)
+    window.addEventListener('beforeunload', flush)
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => {
+      window.removeEventListener('pagehide', flush)
+      window.removeEventListener('beforeunload', flush)
+      document.removeEventListener('visibilitychange', onVisibility)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profile?.id])
 
   // Daily auto-reset: run at midnight boundary
   useEffect(() => {

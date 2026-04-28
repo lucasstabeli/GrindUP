@@ -1,4 +1,4 @@
-import { useRef, useEffect, useCallback } from 'react'
+import { useRef, useEffect, useCallback, useState } from 'react'
 import { fmt } from '../hooks/useGameData'
 
 const BASE_OPACITY = 0
@@ -8,7 +8,9 @@ export default function SwipeTaskCard({ task, index, onComplete, onFail, onUndo 
   const stateRef = useRef({ startX: 0, startY: 0, curX: 0, dragging: false, dirLocked: false, isHoriz: false })
   const onCompleteRef = useRef(onComplete)
   const onFailRef = useRef(onFail)
+  const [trophyPop, setTrophyPop] = useState(0)
   const THRESHOLD = 80
+  const trophyVal = task.trophy ?? 1
 
   useEffect(() => { onCompleteRef.current = onComplete }, [onComplete])
   useEffect(() => { onFailRef.current = onFail }, [onFail])
@@ -65,9 +67,16 @@ export default function SwipeTaskCard({ task, index, onComplete, onFail, onUndo 
     const dx = s.curX - s.startX
     card.style.transition = 'transform .28s ease, opacity .28s ease'
     if (dx > THRESHOLD) {
-      card.style.transform = 'translateX(130%) rotate(15deg)'
-      card.style.opacity = '0'
-      setTimeout(() => onCompleteRef.current(index), 280)
+      // show trophy pop briefly, then animate card off
+      setTrophyPop(trophyVal)
+      card.style.transform = ''
+      card.style.opacity = ''
+      card.style.background = ''
+      const hintR = card.querySelector('.sh-done')
+      const hintL = card.querySelector('.sh-fail')
+      if (hintR) hintR.style.opacity = String(BASE_OPACITY)
+      if (hintL) hintL.style.opacity = String(BASE_OPACITY)
+      setTimeout(() => onCompleteRef.current(index), 850)
     } else if (dx < -THRESHOLD) {
       card.style.transform = 'translateX(-130%) rotate(-15deg)'
       card.style.opacity = '0'
@@ -142,6 +151,7 @@ export default function SwipeTaskCard({ task, index, onComplete, onFail, onUndo 
       onTouchEnd={onEnd}
       onMouseDown={(e) => { e.preventDefault(); onStart(e.clientX, e.clientY) }}
     >
+      {trophyPop > 0 && <div className="trophy-pop">+{trophyPop} 🏆</div>}
       {/* Swipe feedback overlays — hidden at rest, revealed by JS during drag */}
       {pen > 0 && (
         <div className="sh-fail" style={{ opacity: 0 }}>

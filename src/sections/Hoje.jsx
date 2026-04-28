@@ -1,8 +1,10 @@
+import { useState } from 'react'
 import { useGameData, fmt, pct, ALL_DAYS, DAY_LETTERS, todayIdx, dayName, getWeekWorkout, WORKOUTS } from '../hooks/useGameData'
 import SwipeTaskCard from '../components/SwipeTaskCard'
 
 export default function Hoje({ onNavigate }) {
   const { D, save } = useGameData()
+  const [kaffaPop, setKaffaPop] = useState(0)
   if (!D) return null
 
   const idx = todayIdx()
@@ -18,7 +20,15 @@ export default function Hoje({ onNavigate }) {
 
   function completeKaffa() {
     if (D.kaffa.done) return
-    save({ ...D, kaffa: { ...D.kaffa, done: true }, coins: D.coins + D.kaffa.reward })
+    const trophy = D.kaffa.trophy ?? 20
+    setKaffaPop(trophy)
+    setTimeout(() => setKaffaPop(0), 900)
+    save({
+      ...D,
+      kaffa: { ...D.kaffa, done: true },
+      coins: D.coins + D.kaffa.reward,
+      trophies: (D.trophies || 0) + trophy,
+    })
   }
 
   function setTask(origIdx, state) {
@@ -26,16 +36,18 @@ export default function Hoje({ onNavigate }) {
     if (prev === state) return
     const t = D.tasks[origIdx]
     const pen = t.penalty || 0
+    const trophyVal = t.trophy ?? 1
     let coins = D.coins
-    if (prev === 'done'   && state === 'idle') coins = Math.max(0, coins - t.reward)
-    if (prev === 'failed' && state === 'idle') coins += pen
-    if (state === 'done'  && prev !== 'done')  coins += t.reward
+    let trophies = D.trophies || 0
+    if (prev === 'done'   && state === 'idle')   { coins = Math.max(0, coins - t.reward); trophies = Math.max(0, trophies - trophyVal) }
+    if (prev === 'failed' && state === 'idle')   { coins += pen }
+    if (state === 'done'  && prev !== 'done')    { coins += t.reward; trophies += trophyVal }
     if (state === 'failed') {
-      if (prev === 'done') coins = Math.max(0, coins - t.reward)
+      if (prev === 'done') { coins = Math.max(0, coins - t.reward); trophies = Math.max(0, trophies - trophyVal) }
       if (!D.vacation)     coins = Math.max(0, coins - pen)
     }
     const tasks = D.tasks.map((tk, j) => j === origIdx ? { ...tk, state } : tk)
-    save({ ...D, tasks, coins })
+    save({ ...D, tasks, coins, trophies })
   }
 
   function tapWater(i) {
@@ -67,8 +79,9 @@ export default function Hoje({ onNavigate }) {
       <div className="d-grid">
         <div>
           {/* KAFFA */}
-          <div className="section-head"><h2>Super missão</h2><span>👑 principal do dia</span></div>
-          <div className={`task-card ${D.kaffa.done ? 'done' : ''}`} style={{ borderColor: D.kaffa.done ? 'rgba(51,177,111,.45)' : 'rgba(240,106,59,.4)' }}>
+          <div className="section-head"><h2>Missão do ano</h2><span>👑 principal do ano</span></div>
+          <div className={`task-card ${D.kaffa.done ? 'done' : ''}`} style={{ borderColor: D.kaffa.done ? 'rgba(51,177,111,.45)' : 'rgba(240,106,59,.4)', position: 'relative' }}>
+            {kaffaPop > 0 && <div className="trophy-pop">+{kaffaPop} 🏆</div>}
             <div className="task-top">
               <div className="emoji-box" style={{ background: 'rgba(240,106,59,.18)', fontSize: 24 }}>👑</div>
               <div className="task-main">
@@ -80,7 +93,7 @@ export default function Hoje({ onNavigate }) {
                 </div>
               </div>
               <div className="task-status">
-                <span className={`tag ${D.kaffa.done ? 'done' : 'accent'}`}>{D.kaffa.done ? '✓ Feito' : '⭐ Super'}</span>
+                <span className={`tag ${D.kaffa.done ? 'done' : 'accent'}`}>{D.kaffa.done ? '✓ Feito' : '⭐ Ano'}</span>
               </div>
             </div>
             {D.kaffa.done

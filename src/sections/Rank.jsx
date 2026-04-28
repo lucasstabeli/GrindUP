@@ -256,7 +256,7 @@ export default function Rank() {
         id: row.friend_id,
         name: row.friend_name || 'Anônimo',
         avatar_url: row.friend_avatar || null,
-        coins: row.coins || 0,
+        trophies: row.trophies || 0,
         streak: row.streak || 0,
       })))
       setPending((pendingRows || []).map(row => ({
@@ -375,12 +375,12 @@ export default function Rank() {
     id: profile?.id,
     name: profile?.name || 'Você',
     avatar_url: profile?.avatar_url || null,
-    coins: D?.coins || 0,
+    trophies: D?.trophies || 0,
     streak: D?.streak || 0,
     isMe: true,
   }
 
-  const leaderboard = [myEntry, ...friends].sort((a, b) => b.coins - a.coins)
+  const leaderboard = [myEntry, ...friends].sort((a, b) => b.trophies - a.trophies)
   const medals = ['🥇', '🥈', '🥉']
 
   return (
@@ -513,8 +513,8 @@ export default function Rank() {
               </div>
 
               <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                <div style={{ fontSize: '1.1rem', fontWeight: 900, color: 'var(--accent)' }}>{fmt(user.coins)}</div>
-                <div style={{ fontSize: '0.65rem', color: 'var(--muted)', fontWeight: 700 }}>🪙 moedas</div>
+                <div style={{ fontSize: '1.1rem', fontWeight: 900, color: 'var(--accent)' }}>{fmt(user.trophies)}</div>
+                <div style={{ fontSize: '0.65rem', color: 'var(--muted)', fontWeight: 700 }}>🏆 troféus</div>
               </div>
 
               {!user.isMe && (
