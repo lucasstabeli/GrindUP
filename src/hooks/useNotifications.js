@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import OneSignal from 'react-onesignal'
 import { useGameData } from './useGameData'
 import { supabase } from '../lib/supabase'
@@ -45,7 +45,6 @@ function clearLog() { try { localStorage.removeItem(LOG_KEY) } catch {} }
 export function useNotifications() {
   const { D, saveImmediate } = useGameData()
   const { profile } = useUserStore()
-  const timersRef = useRef([])
   const userId = profile?.id
 
   const [permission, setPermission] = useState(() => {
@@ -419,57 +418,9 @@ export function useNotifications() {
     }
   }
 
-  // ── Local schedule (app em background) ──
-  function clearTimers() {
-    timersRef.current.forEach(clearTimeout)
-    timersRef.current = []
-  }
-
-  function sendLocalNotification(body) {
-    try {
-      navigator.serviceWorker?.ready
-        .then(reg => reg.showNotification(APP_NAME, {
-          body,
-          icon: '/icons/icon-192.png',
-          badge: '/icons/icon-32.png',
-          vibrate: [100, 50, 100],
-          tag: 'grindupreminder',
-        }))
-        .catch(() => { try { new Notification(APP_NAME, { body }) } catch {} })
-    } catch {}
-  }
-
-  function scheduleForToday() {
-    clearTimers()
-    if (!notifSettings.enabled || permission !== 'granted') return
-    const times = notifSettings.times || DEFAULT_TIMES
-    const messages = notifSettings.messages || DEFAULT_MESSAGES
-    const now = Date.now()
-    times.forEach(time => {
-      const [h, m] = time.split(':').map(Number)
-      const target = new Date()
-      target.setHours(h, m, 0, 0)
-      const diff = target.getTime() - now
-      if (diff > 0 && diff < 86_400_000) {
-        const id = setTimeout(() => {
-          const msg = messages[Math.floor(Math.random() * messages.length)]
-          if (userId) {
-            supabase.functions.invoke('send-push', { body: { userId, body: msg } })
-              .catch(() => sendLocalNotification(msg))
-          } else {
-            sendLocalNotification(msg)
-          }
-        }, diff)
-        timersRef.current.push(id)
-      }
-    })
-  }
-
-  useEffect(() => {
-    scheduleForToday()
-    return clearTimers
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [notifSettings.enabled, JSON.stringify(notifSettings.times), permission])
+  // Schedule de horários roda 100% no servidor (cron-push). O client não dispara
+  // mais nada por horário — antes o setTimeout local + cron causavam DOIS pushes
+  // simultâneos no mesmo minuto.
 
   // ── Salva: localStorage (instantâneo) + Supabase (sync) ──
   function saveNotifSettings(newSettings) {
