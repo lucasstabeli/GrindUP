@@ -35,34 +35,7 @@ function AvatarButton({ profile, onClick }) {
 
 export default function TopBar({ title, onAdmin, isAdmin }) {
   const { profile, setTheme, setProfile } = useUserStore()
-  const { permission, subStatus, subError, enabled, times, requestPermission, subscribePush, toggleEnabled, setTimes, testPush, testLocalNotification, testLocalDelayed, testRemoteDelayed, getDiagnostics, resetPushSystem, getLog, clearLog } = useNotifications()
-  const [showLogs, setShowLogs] = useState(false)
-  const [logData, setLogData] = useState([])
-
-  useEffect(() => {
-    if (!showLogs) return
-    setLogData(getLog())
-    const id = setInterval(() => setLogData(getLog()), 1500)
-    return () => clearInterval(id)
-  }, [showLogs, getLog])
-  const [testingPush, setTestingPush] = useState(false)
-  const [testResult, setTestResult] = useState('')
-  const [showDiag, setShowDiag] = useState(false)
-  const [diagData, setDiagData] = useState(null)
-  const [countdown, setCountdown] = useState(0)
-
-  useEffect(() => {
-    if (countdown <= 0) return
-    const id = setInterval(() => setCountdown(v => v - 1), 1000)
-    return () => clearInterval(id)
-  }, [countdown])
-
-  useEffect(() => {
-    if (!showDiag) return
-    let active = true
-    getDiagnostics().then(d => { if (active) setDiagData(d) }).catch(() => {})
-    return () => { active = false }
-  }, [showDiag, getDiagnostics])
+  const { subStatus, subError, enabled, times, toggleEnabled, setTimes } = useNotifications()
 
   const [showTheme, setShowTheme] = useState(false)
   const [showNotif, setShowNotif] = useState(false)
@@ -346,50 +319,41 @@ export default function TopBar({ title, onAdmin, isAdmin }) {
 
       {/* ── NOTIFICATIONS PANEL ── */}
       {showNotif && (
-        <div className="booking-overlay" onClick={e => { if (e.target === e.currentTarget) { setShowNotif(false); setTestResult('') } }}>
+        <div className="booking-overlay" onClick={e => { if (e.target === e.currentTarget) setShowNotif(false) }}>
           <div className="booking-sheet">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
               <h3 style={{ fontSize: '1.1rem', fontWeight: 800 }}>Notificações</h3>
-              <button onClick={() => { setShowNotif(false); setTestResult('') }} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: '1.4rem', cursor: 'pointer', lineHeight: 1 }}>×</button>
+              <button onClick={() => setShowNotif(false)} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: '1.4rem', cursor: 'pointer', lineHeight: 1 }}>×</button>
             </div>
 
-            {/* iOS tip */}
-            {/iphone|ipad|ipod/i.test(navigator.userAgent) && subStatus !== 'subscribed' && (
-              <div style={{ background: 'rgba(59,130,246,0.08)', border: '1px solid rgba(59,130,246,0.2)', borderRadius: 10, padding: '10px 14px', marginBottom: 16, fontSize: '0.8rem', color: '#60a5fa' }}>
-                iPhone: certifique-se que abriu pelo <strong>ícone instalado</strong> na Tela de Início, não pelo Safari.
+            {/* Mensagem de erro (se houver) */}
+            {subStatus === 'error' && subError && (
+              <div style={{ padding: '10px 14px', borderRadius: 10, marginBottom: 16, fontSize: '0.82rem', fontWeight: 700,
+                background: 'rgba(239,68,68,0.1)', color: 'var(--danger)',
+                border: '1px solid rgba(239,68,68,0.3)' }}>
+                ❌ {subError}
               </div>
             )}
 
-            {/* Status badge */}
-            <div style={{
-              display: 'flex', alignItems: 'center', gap: 8,
-              padding: '10px 14px', borderRadius: 10, marginBottom: 16,
-              background: subStatus === 'subscribed' ? 'rgba(34,197,94,0.1)' : 'var(--surface-2)',
-              border: `1px solid ${subStatus === 'subscribed' ? 'rgba(34,197,94,0.3)' : 'var(--line)'}`,
-            }}>
-              <span style={{ fontSize: '1rem' }}>
-                {subStatus === 'subscribed' ? '✅' : subStatus === 'subscribing' ? '⏳' : subStatus === 'error' ? '❌' : '⭕'}
-              </span>
-              <span style={{ fontSize: '0.82rem', fontWeight: 700, color: subStatus === 'subscribed' ? '#22c55e' : 'var(--muted)' }}>
-                {subStatus === 'subscribed' ? 'Push ativo — receberá notificações em segundo plano' :
-                  subStatus === 'subscribing' ? 'Ativando...' :
-                  subStatus === 'error' ? (subError || 'Erro ao ativar push') :
-                  'Push não ativado'}
-              </span>
-            </div>
-
-            {/* Toggle */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+            {/* Toggle ativar */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
               <div>
                 <div style={{ fontWeight: 700, fontSize: '0.95rem' }}>Ativar lembretes</div>
-                <div style={{ fontSize: '0.78rem', color: 'var(--muted)', marginTop: 2 }}>Notificações nos horários abaixo</div>
+                <div style={{ fontSize: '0.78rem', color: 'var(--muted)', marginTop: 2 }}>
+                  {subStatus === 'subscribing' ? 'Ativando...' :
+                    enabled && subStatus === 'subscribed' ? 'Notificações ativas' :
+                    'Notificações nos horários abaixo'}
+                </div>
               </div>
               <button
                 onClick={() => toggleEnabled(!enabled)}
+                disabled={subStatus === 'subscribing'}
                 style={{
                   width: 48, height: 26, borderRadius: 13,
                   background: enabled ? 'var(--accent)' : 'var(--surface-3)',
-                  border: 'none', cursor: 'pointer', position: 'relative', transition: 'background 0.2s', flexShrink: 0,
+                  border: 'none', cursor: subStatus === 'subscribing' ? 'wait' : 'pointer',
+                  position: 'relative', transition: 'background 0.2s', flexShrink: 0,
+                  opacity: subStatus === 'subscribing' ? 0.6 : 1,
                 }}
               >
                 <span style={{
@@ -400,20 +364,8 @@ export default function TopBar({ title, onAdmin, isAdmin }) {
               </button>
             </div>
 
-            {/* Manual subscribe button if not subscribed */}
-            {subStatus !== 'subscribed' && (
-              <button
-                className="btn btn-primary"
-                onClick={() => { subscribePush(true) }}
-                disabled={subStatus === 'subscribing'}
-                style={{ marginBottom: 16, opacity: subStatus === 'subscribing' ? 0.6 : 1 }}
-              >
-                {subStatus === 'subscribing' ? '⏳ Ativando...' : '🔔 Ativar notificações push'}
-              </button>
-            )}
-
-            {/* Times */}
-            <div style={{ marginBottom: 16 }}>
+            {/* Horários */}
+            <div>
               <div style={{ fontSize: '0.72rem', fontWeight: 800, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: 10 }}>Horários</div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                 {times.map((t, i) => (
@@ -433,169 +385,6 @@ export default function TopBar({ title, onAdmin, isAdmin }) {
                 )}
               </div>
             </div>
-
-            {/* Test button */}
-            {testResult && (
-              <div style={{ padding: '10px 14px', borderRadius: 10, marginBottom: 10, fontSize: '0.85rem', fontWeight: 700,
-                background: (testResult === 'ok' || testResult === 'localOk') ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)',
-                color: (testResult === 'ok' || testResult === 'localOk') ? '#22c55e' : 'var(--danger)',
-                border: `1px solid ${(testResult === 'ok' || testResult === 'localOk') ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.3)'}` }}>
-                {testResult === 'ok'
-                  ? '✅ Notificação enviada pelo servidor! Feche o app e aguarde até 30s.'
-                  : testResult === 'localOk'
-                    ? '✅ Notificação local disparada. Se você não viu nada, é problema do iOS (Ajustes > GrindUP > Notificações).'
-                    : testResult === 'noRecipients'
-                      ? '❌ Dispositivo não registrado no OneSignal. Desinstale o app e instale de novo pela Tela de Início.'
-                      : '❌ ' + testResult}
-              </div>
-            )}
-            <button
-              className="btn"
-              onClick={async () => {
-                setTestingPush(true)
-                setTestResult('')
-                const result = await testPush()
-                setTestResult(result === true ? 'ok' : result === 'noRecipients' ? 'noRecipients' : typeof result === 'string' ? result : 'Falhou')
-                setTestingPush(false)
-              }}
-              disabled={testingPush}
-              style={{
-                width: '100%', background: 'var(--accent-soft)', color: 'var(--accent)',
-                border: '1px solid var(--accent)', padding: '12px', borderRadius: 10,
-                fontSize: '0.9rem', fontWeight: 700, textTransform: 'none', letterSpacing: 0,
-                cursor: testingPush ? 'wait' : 'pointer', opacity: testingPush ? 0.6 : 1,
-              }}
-            >
-              {testingPush ? '⏳ Enviando...' : '📲 Testar notificação (servidor)'}
-            </button>
-
-            {/* Teste local — verifica se iOS+SW estão OK sem passar pelo OneSignal */}
-            <button
-              className="btn"
-              onClick={async () => {
-                setTestResult('')
-                const result = await testLocalNotification()
-                setTestResult(result === true ? 'localOk' : typeof result === 'string' ? result : 'Falhou')
-              }}
-              style={{
-                width: '100%', background: 'transparent', color: 'var(--muted)',
-                border: '1px solid var(--line)', padding: '10px', borderRadius: 10,
-                fontSize: '0.82rem', fontWeight: 700, textTransform: 'none', letterSpacing: 0,
-                cursor: 'pointer', marginTop: 8,
-              }}
-            >
-              🧪 Testar notificação local (sem servidor)
-            </button>
-
-            {/* Testes com DELAY — feche o app durante o countdown */}
-            <div style={{ marginTop: 12, padding: 10, background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)', borderRadius: 10 }}>
-              <div style={{ fontSize: '0.78rem', color: '#f59e0b', fontWeight: 700, marginBottom: 8, textAlign: 'center' }}>
-                ⚠️ iOS NÃO mostra banner com app aberto
-              </div>
-              <div style={{ fontSize: '0.72rem', color: 'var(--muted)', marginBottom: 10, textAlign: 'center' }}>
-                Aperte um botão e <strong>FECHE O APP</strong> (swipe up) durante o countdown
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                <button
-                  onClick={() => {
-                    setTestResult('')
-                    setCountdown(10)
-                    testLocalDelayed(10)
-                  }}
-                  disabled={countdown > 0}
-                  style={{
-                    width: '100%', background: 'var(--surface-2)', color: 'var(--text)',
-                    border: '1px solid var(--line)', padding: '10px', borderRadius: 8,
-                    fontSize: '0.8rem', fontWeight: 700, fontFamily: 'inherit',
-                    cursor: countdown > 0 ? 'wait' : 'pointer', opacity: countdown > 0 ? 0.6 : 1,
-                  }}
-                >
-                  {countdown > 0 ? `⏳ Disparando em ${countdown}s — FECHE O APP!` : '🧪 Local em 10s'}
-                </button>
-                <button
-                  onClick={() => {
-                    setTestResult('')
-                    setCountdown(10)
-                    testRemoteDelayed(10)
-                  }}
-                  disabled={countdown > 0}
-                  style={{
-                    width: '100%', background: 'var(--surface-2)', color: 'var(--text)',
-                    border: '1px solid var(--line)', padding: '10px', borderRadius: 8,
-                    fontSize: '0.8rem', fontWeight: 700, fontFamily: 'inherit',
-                    cursor: countdown > 0 ? 'wait' : 'pointer', opacity: countdown > 0 ? 0.6 : 1,
-                  }}
-                >
-                  {countdown > 0 ? `⏳ Disparando em ${countdown}s — FECHE O APP!` : '📲 Servidor em 10s'}
-                </button>
-              </div>
-            </div>
-
-            {/* Reset nuclear — quando estado fica travado */}
-            <button
-              onClick={async () => {
-                if (!confirm('Vai desregistrar tudo, limpar cache e recarregar. Continuar?')) return
-                await resetPushSystem()
-              }}
-              style={{
-                width: '100%', background: 'transparent', color: 'var(--danger)',
-                border: '1px solid var(--danger)', padding: '10px', borderRadius: 10,
-                fontSize: '0.78rem', fontWeight: 700, fontFamily: 'inherit',
-                cursor: 'pointer', marginTop: 12, textTransform: 'none', letterSpacing: 0,
-              }}
-            >
-              ☢️ Reset completo (se travou em "ativando")
-            </button>
-
-            {/* Diagnóstico */}
-            <button
-              onClick={() => setShowDiag(v => !v)}
-              style={{
-                width: '100%', background: 'transparent', color: 'var(--muted)',
-                border: 'none', padding: '8px', fontSize: '0.72rem',
-                fontFamily: 'inherit', cursor: 'pointer', marginTop: 4, textDecoration: 'underline',
-              }}
-            >
-              {showDiag ? 'Ocultar' : 'Mostrar'} diagnóstico
-            </button>
-            {showDiag && (
-              <pre style={{
-                background: 'var(--surface-2)', border: '1px solid var(--line)',
-                borderRadius: 8, padding: 10, fontSize: '0.7rem', color: 'var(--muted)',
-                overflow: 'auto', maxHeight: 240, marginTop: 4, whiteSpace: 'pre-wrap', wordBreak: 'break-all',
-              }}>{diagData ? JSON.stringify(diagData, null, 2) : 'Carregando diagnóstico...'}</pre>
-            )}
-
-            {/* LOGS PERSISTENTES — mostra exatamente onde falhou */}
-            <button
-              onClick={() => setShowLogs(v => !v)}
-              style={{
-                width: '100%', background: 'transparent', color: '#f59e0b',
-                border: 'none', padding: '8px', fontSize: '0.78rem',
-                fontFamily: 'inherit', cursor: 'pointer', marginTop: 4, textDecoration: 'underline',
-                fontWeight: 700,
-              }}
-            >
-              {showLogs ? 'Ocultar' : '🔍 MOSTRAR'} logs detalhados ({logData.length || getLog().length})
-            </button>
-            {showLogs && (
-              <div>
-                <button
-                  onClick={() => { clearLog(); setLogData([]) }}
-                  style={{
-                    background: 'transparent', color: 'var(--danger)',
-                    border: '1px solid var(--danger)', borderRadius: 6,
-                    padding: '4px 10px', fontSize: '0.7rem', fontFamily: 'inherit',
-                    cursor: 'pointer', marginBottom: 6,
-                  }}
-                >Limpar logs</button>
-                <pre style={{
-                  background: '#000', color: '#0f0', border: '1px solid var(--line)',
-                  borderRadius: 8, padding: 10, fontSize: '0.65rem',
-                  overflow: 'auto', maxHeight: 320, whiteSpace: 'pre-wrap', wordBreak: 'break-word',
-                }}>{logData.map(e => `${e.t} ${e.msg}${e.data ? ': ' + e.data : ''}`).join('\n') || '(vazio — ative as notificações pra gerar logs)'}</pre>
-              </div>
-            )}
           </div>
         </div>
       )}
