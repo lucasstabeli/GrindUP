@@ -39,6 +39,7 @@ export default function Signup() {
       password,
       options: {
         data: { full_name: name, gender, theme: finalTheme },
+        emailRedirectTo: `${window.location.origin}/app`,
       },
     })
 
@@ -82,7 +83,7 @@ export default function Signup() {
 
   return (
     <div className="auth-page">
-      <div className="auth-logo">VidaFit</div>
+      <div className="auth-logo">Grind<span style={{ color: '#fff' }}>UP</span></div>
       <p className="auth-subtitle">Personalize seu app</p>
       <form className="auth-form" onSubmit={handleSubmit}>
         {error && <div className="auth-error">{error}</div>}

@@ -7,6 +7,7 @@ import Cursos from '../sections/Cursos'
 import Loja from '../sections/Loja'
 import Rank from '../sections/Rank'
 import AdminPanel from '../sections/AdminPanel'
+import SubscriptionGate from '../components/SubscriptionGate'
 
 const IcHome = () => (
   <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20">
@@ -71,21 +72,23 @@ export default function ClientApp() {
   }
 
   return (
-    <div style={{ minHeight: '100dvh', background: 'var(--bg)' }}>
-      <TopBar onAdmin={() => setShowAdmin(true)} />
-      <div className="tab-content">{content[tab]}</div>
-      <nav className="nav">
-        {TABS.map(({ id, label, Icon }) => (
-          <button
-            key={id}
-            className={tab === id ? 'active' : ''}
-            onClick={() => setTab(id)}
-          >
-            <Icon />
-            <span>{label}</span>
-          </button>
-        ))}
-      </nav>
-    </div>
+    <SubscriptionGate>
+      <div style={{ minHeight: '100dvh', background: 'var(--bg)' }}>
+        <TopBar onAdmin={() => setShowAdmin(true)} />
+        <div className="tab-content">{content[tab]}</div>
+        <nav className="nav">
+          {TABS.map(({ id, label, Icon }) => (
+            <button
+              key={id}
+              className={tab === id ? 'active' : ''}
+              onClick={() => setTab(id)}
+            >
+              <Icon />
+              <span>{label}</span>
+            </button>
+          ))}
+        </nav>
+      </div>
+    </SubscriptionGate>
   )
 }
