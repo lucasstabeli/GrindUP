@@ -6,6 +6,11 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
+const PLANS = {
+  monthly: { title: 'GrindUP Premium — Mensal', price: 19.90 },
+  annual:  { title: 'GrindUP Premium — Anual',  price: 149.00 },
+} as const
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
@@ -21,13 +26,15 @@ serve(async (req) => {
     const { data: { user } } = await supabaseClient.auth.getUser()
     if (!user) throw new Error('Não autenticado')
 
-    const { appUrl } = await req.json()
+    const { appUrl, plan = 'monthly' } = await req.json()
     if (!appUrl) throw new Error('appUrl é obrigatório')
+    if (!PLANS[plan as keyof typeof PLANS]) throw new Error('Plano inválido')
 
     const mpAccessToken = Deno.env.get('MP_ACCESS_TOKEN')
     if (!mpAccessToken) throw new Error('MP_ACCESS_TOKEN não configurado — adicione o segredo no Supabase')
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
+    const { title, price } = PLANS[plan as keyof typeof PLANS]
 
     const preferenceRes = await fetch('https://api.mercadopago.com/checkout/preferences', {
       method: 'POST',
@@ -37,9 +44,9 @@ serve(async (req) => {
       },
       body: JSON.stringify({
         items: [{
-          title: 'GrindUP — Acesso Mensal',
+          title,
           quantity: 1,
-          unit_price: 5.00,
+          unit_price: price,
           currency_id: 'BRL',
         }],
         payer: { email: user.email },
@@ -49,7 +56,8 @@ serve(async (req) => {
           pending: `${appUrl}/app?sub=pending`,
         },
         auto_return: 'approved',
-        external_reference: user.id,
+        // userId:plan codificado para o webhook saber qual plano ativar
+        external_reference: `${user.id}:${plan}`,
         notification_url: `${supabaseUrl}/functions/v1/mp-webhook`,
         statement_descriptor: 'GRINDUP',
       }),
