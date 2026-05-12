@@ -7,8 +7,8 @@ export function usePremium() {
 
   const now = new Date()
   const trialEnd = profile.trial_ends_at ? new Date(profile.trial_ends_at) : null
-  const isInTrial = !!(trialEnd && trialEnd > now)
   const isActive = profile.subscription_status === 'active'
+  const isInTrial = !isActive && !!(trialEnd && trialEnd > now)
   const isPremium = isInTrial || isActive
 
   const daysLeft = isInTrial
