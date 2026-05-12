@@ -379,11 +379,25 @@ function LojaConfig({ D, save }) {
 /* ─── Rotina Config ─── */
 function RotinaConfig({ D, save }) {
   const [form, setForm] = useState({ time: '', title: '', desc: '', color: 'var(--accent)' })
+  const [editIdx, setEditIdx] = useState(null)
+  const [editForm, setEditForm] = useState({})
 
   function submit(e) {
     e.preventDefault()
     save({ ...D, routine: [...D.routine, { ...form }] })
     setForm({ time: '', title: '', desc: '', color: 'var(--accent)' })
+  }
+
+  function startEdit(i) {
+    setEditIdx(i)
+    setEditForm({ ...D.routine[i] })
+  }
+
+  function saveEdit(e) {
+    e.preventDefault()
+    const routine = D.routine.map((r, i) => i === editIdx ? { ...r, ...editForm } : r)
+    save({ ...D, routine })
+    setEditIdx(null)
   }
 
   function remove(i) {
@@ -412,13 +426,39 @@ function RotinaConfig({ D, save }) {
       </form>
 
       {D.routine.map((r, i) => (
-        <div key={i} className="card" style={{ marginBottom: 10, display: 'flex', alignItems: 'center', gap: 12, borderLeft: `3px solid ${r.color}` }}>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: '0.8rem', color: 'var(--muted)' }}>{r.time}</div>
-            <div style={{ fontWeight: 600 }}>{r.title}</div>
-            {r.desc && <div style={{ fontSize: '0.8rem', color: 'var(--muted)' }}>{r.desc}</div>}
-          </div>
-          <button className="btn btn-danger" style={{ padding: '6px 10px', width: 'auto' }} onClick={() => remove(i)}>🗑</button>
+        <div key={i}>
+          {editIdx === i ? (
+            <form className="card" style={{ marginBottom: 10, borderLeft: `3px solid ${r.color}` }} onSubmit={saveEdit}>
+              <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+                <div className="input-group" style={{ width: 90 }}>
+                  <label>Horário</label>
+                  <input type="time" value={editForm.time} onChange={e => setEditForm(f => ({ ...f, time: e.target.value }))} required />
+                </div>
+                <div className="input-group" style={{ flex: 1 }}>
+                  <label>Título</label>
+                  <input value={editForm.title} onChange={e => setEditForm(f => ({ ...f, title: e.target.value }))} required />
+                </div>
+              </div>
+              <div className="input-group" style={{ marginBottom: 12 }}>
+                <label>Descrição</label>
+                <input value={editForm.desc} onChange={e => setEditForm(f => ({ ...f, desc: e.target.value }))} />
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button className="btn btn-primary" type="submit" style={{ flex: 1 }}>Salvar</button>
+                <button className="btn btn-ghost" type="button" style={{ flex: 1 }} onClick={() => setEditIdx(null)}>Cancelar</button>
+              </div>
+            </form>
+          ) : (
+            <div className="card" style={{ marginBottom: 10, display: 'flex', alignItems: 'center', gap: 12, borderLeft: `3px solid ${r.color}` }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: '0.8rem', color: 'var(--muted)' }}>{r.time}</div>
+                <div style={{ fontWeight: 600 }}>{r.title}</div>
+                {r.desc && <div style={{ fontSize: '0.8rem', color: 'var(--muted)' }}>{r.desc}</div>}
+              </div>
+              <button className="btn btn-ghost" style={{ padding: '6px 10px', width: 'auto' }} onClick={() => startEdit(i)}>✏️</button>
+              <button className="btn btn-danger" style={{ padding: '6px 10px', width: 'auto' }} onClick={() => remove(i)}>🗑</button>
+            </div>
+          )}
         </div>
       ))}
     </div>

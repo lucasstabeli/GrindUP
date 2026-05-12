@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { useUserStore } from '../../stores/useUserStore'
 import { useNotifications } from '../../hooks/useNotifications'
+import { usePremium } from '../../hooks/usePremium'
 import { supabase } from '../../lib/supabase'
 
 const IcBell = () => (
@@ -36,6 +37,7 @@ function AvatarButton({ profile, onClick }) {
 export default function TopBar({ title, onAdmin, isAdmin }) {
   const { profile, setTheme, setProfile } = useUserStore()
   const { subStatus, subError, enabled, times, toggleEnabled, setTimes } = useNotifications()
+  const { isActive } = usePremium()
 
   const [showTheme, setShowTheme] = useState(false)
   const [showNotif, setShowNotif] = useState(false)
@@ -150,8 +152,11 @@ export default function TopBar({ title, onAdmin, isAdmin }) {
   return (
     <>
       <div className="topbar">
-        <span className="topbar-logo">
+        <span className="topbar-logo" style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
           {title || <>Grind<span style={{ color: '#fff' }}>UP</span></>}
+          {isActive && (
+            <span style={{ fontSize: '0.85em', color: '#ff9800', lineHeight: 1 }} title="Premium">👑</span>
+          )}
         </span>
         <div className="topbar-actions" ref={dropRef}>
 
@@ -223,6 +228,18 @@ export default function TopBar({ title, onAdmin, isAdmin }) {
                 )}
               </div>
               {uploading && <div style={{ fontSize: '0.82rem', color: 'var(--muted)' }}>Enviando foto...</div>}
+              {isActive && (
+                <div style={{
+                  display: 'flex', alignItems: 'center', gap: 5,
+                  background: 'linear-gradient(90deg, rgba(255,152,0,0.18) 0%, rgba(255,152,0,0.08) 100%)',
+                  border: '1px solid rgba(255,152,0,0.4)',
+                  borderRadius: 20, padding: '4px 12px',
+                  fontSize: '0.75rem', fontWeight: 800, color: '#ff9800',
+                  letterSpacing: '0.5px', textTransform: 'uppercase',
+                }}>
+                  <span>👑</span> Premium
+                </div>
+              )}
             </div>
 
             {/* Name edit */}
